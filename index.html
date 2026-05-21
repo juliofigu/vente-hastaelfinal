@@ -162,7 +162,7 @@
             <div style="font-weight:700;font-size:1.1rem">${p.nombre}</div>
             <div style="font-size:0.85rem;color:#64748b;margin:4px 0">🆔 ${p.cedula} • 📍 ${p.parroquia}</div>
             <div class="actions" style="justify-content:flex-end">
-              ${!p.qrSent ? `<button class="btn btn-sm wa-btn" onclick="sendQR('${p.cedula}')">📤 Enviar QR</button>` : `<span style="color:#22c55e;font-weight:600">✓ Enviado</span>`}
+              ${!p.qrSent ? `<button class="btn btn-sm wa-btn" onclick="sendQR('${p.cedula}')">📤 Enviar QR</button>` : `<span style="color:#22c55e;font-weight:600">✓ Qr Enviado</span>`}
               ${p.scanned ? `<span style="color:#22c55e;font-weight:600;margin-left:10px">✓ Ingresó</span>` : ''}
             </div>
           </div>`).join('');
