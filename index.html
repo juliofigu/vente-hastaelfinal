@@ -13,6 +13,31 @@
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   
+<!-- Firebase SDK vía CDN (sin npm) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, query, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  
+  const firebaseConfig = {
+    apiKey: "AIzaSyCnM2jqvY3oxdrS5Js-HghWjk7Sjan7qUc",
+    authDomain: "evento-04jun.firebaseapp.com",
+    projectId: "evento-04jun",
+    storageBucket: "evento-04jun.firebasestorage.app",
+    messagingSenderId: "638789735095",
+    appId: "1:638789735095:web:6337210d4816af49e9f332",
+    measurementId: "G-S3ZKG6LJJK"
+  };
+  
+  const app = initializeApp(firebaseConfig);
+  const firestore = getFirestore(app);
+  
+  // Activar persistencia offline
+  enableIndexedDbPersistence(firestore).catch(err => console.log('Persistencia:', err));
+  
+  // Exportar globalmente para usar en el resto del código
+  window.db = { firestore, doc, setDoc, getDoc, updateDoc, onSnapshot, query, collection };
+</script>
+
   <style>
     :root {
       --success: #22c55e;
@@ -963,66 +988,95 @@
     });
 
     // ===== ENVIAR QR POR WHATSAPP =====
-    // ===== ENVIAR QR: FLUJO SEGURO PARA WHATSAPP =====
+   // ===== ENVIAR QR: FLUJO REAL PARA WHATSAPP =====
 async function sendQR(cedula) {
     try {
         const person = await db.get(cedula);
         if (!person) throw new Error('No encontrado');
 
         const qrContent = db.generateQRContent(person);
-        const modalId = 'modal-qr-action';
-        
-        // Eliminar modal anterior si existe
+        const modalId = 'modal-qr-share';
         const existing = document.getElementById(modalId);
         if (existing) existing.remove();
 
-        // Crear modal con QR visible y botones claros
-        const modalHTML = `
-            <div id="${modalId}" class="modal active" style="z-index: 9999; background: rgba(0,0,0,0.85);">
-                <div class="modal-content" style="text-align:center; max-width: 380px;">
+        const html = `
+            <div id="${modalId}" class="modal active" style="z-index:9999; background:rgba(0,0,0,0.85);">
+                <div class="modal-content" style="text-align:center; max-width:380px;">
                     <div class="modal-header">
-                        <span class="modal-title">🎟️ Código de ${person.nombre}</span>
+                        <span class="modal-title">🎟️ QR de ${person.nombre}</span>
                         <button class="modal-close" onclick="document.getElementById('${modalId}').remove()">&times;</button>
                     </div>
-                    
-                    <div id="qr-container" style="background:white; padding:15px; display:inline-block; border-radius:12px; margin:10px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
-                    
-                    <p style="font-size:0.9rem; color:#475569; margin: 10px 0;">
-                         <strong>Para enviar por WhatsApp:</strong><br>
-                        1. Toca "💾 Descargar Imagen"<br>
-                        2. Abre WhatsApp y adjunta la imagen descargada
+                    <div id="qr-box" style="background:#fff; padding:15px; display:inline-block; border-radius:12px; margin:10px 0;"></div>
+                    <p style="font-size:0.85rem; color:#64748b; margin:10px 0;">
+                        ⚠️ WhatsApp no permite adjuntar imágenes automáticamente.<br>
+                        Usa el botón <strong>📤 Compartir</strong> y selecciona WhatsApp.
                     </p>
-                    
-                    <div class="actions" style="flex-direction:column; gap:10px; margin-top:15px;">
-                        <button onclick="descargarQR('${cedula}')" class="btn btn-success btn-sm" style="width:100%;">
-                            💾 Descargar Imagen QR
+                    <div class="actions" style="flex-direction:column; gap:10px;">
+                        <button onclick="shareQRNative('${cedula}', '${person.nombre}')" class="btn btn-success btn-sm" style="width:100%;">
+                            📤 Compartir (Android/iOS)
                         </button>
-                        <button onclick="compartirDirecto('${cedula}', '${person.nombre}')" class="btn btn-outline btn-sm" style="width:100%;">
-                            📤 Compartir (Menú Android)
+                        <button onclick="downloadQRImg('${cedula}')" class="btn btn-outline btn-sm" style="width:100%;">
+                            💾 Descargar Imagen
                         </button>
                     </div>
                 </div>
             </div>
         `;
-        
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        document.body.insertAdjacentHTML('beforeend', html);
 
         // Generar QR visual
         setTimeout(() => {
-            new QRCode(document.getElementById("qr-container"), {
-                text: qrContent,
-                width: 220,
-                height: 220,
-                colorDark: "#0f172a",
-                colorLight: "#ffffff",
-                correctLevel: QRCode.CorrectLevel.H
+            new QRCode(document.getElementById("qr-box"), {
+                text: qrContent, width: 220, height: 220,
+                colorDark: "#0f172a", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.H
             });
         }, 100);
 
-    } catch (err) {
+    } catch (e) {
         showBubble('❌ Error generando QR', 'error');
-        console.error(err);
     }
+}
+
+async function shareQRNative(cedula, nombre) {
+    const canvas = document.querySelector('#qr-box canvas');
+    if (!canvas) return showBubble(' Generando imagen...', 'info');
+    
+    try {
+        canvas.toBlob(async (blob) => {
+            const file = new File([blob], `QR_${cedula}.png`, { type: 'image/png' });
+            if (navigator.share && navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                    title: `Acceso Evento - ${nombre}`,
+                    text: `Hola ${nombre}, este es tu código QR para el evento del 04/06.`,
+                    files: [file]
+                });
+                await db.update(cedula, { qrSent: true });
+                showBubble('✅ Compartido exitosamente', 'success');
+                document.getElementById('modal-qr-share').remove();
+                renderAttendeesList();
+            } else {
+                showBubble('️ Tu dispositivo no soporta compartir archivos. Usa "Descargar".', 'warning');
+            }
+        }, 'image/png');
+    } catch (err) {
+        console.log('Share cancelado por usuario');
+    }
+}
+
+function downloadQRImg(cedula) {
+    const canvas = document.querySelector('#qr-box canvas');
+    if (!canvas) return;
+    canvas.toBlob(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `QR_${cedula}.png`;
+        a.click(); URL.revokeObjectURL(url);
+        db.update(cedula, { qrSent: true }).then(() => {
+            showBubble('✅ Imagen descargada. Adjúntala en WhatsApp.', 'success');
+            document.getElementById('modal-qr-share').remove();
+            renderAttendeesList();
+        });
+    }, 'image/png');
 }
 
 // Descargar la imagen del canvas QR
