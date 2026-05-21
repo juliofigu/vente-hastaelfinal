@@ -7,52 +7,48 @@
   <meta name="description" content="Control de Acceso - Evento 04 Junio - Vente Cabimas">
   <title>🔐 Acceso Evento 04-Jun | Vente Cabimas</title>
   
-<!-- Cambia esta línea: -->
-<!-- <script src="html5-qrcode.min.js"></script> -->
-<!-- Por esta (CDN oficial y estable): -->
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <!-- Librería QR Scanner -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   
-<!-- Firebase SDK vía CDN (sin npm) -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, query } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  <!-- Firebase SDK vía CDN -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, query, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    
+    const firebaseConfig = {
+      apiKey: "AIzaSyCnM2jqvY3oxdrS5Js-HghWjk7Sjan7qUc",
+      authDomain: "evento-04jun.firebaseapp.com",
+      projectId: "evento-04jun",
+      storageBucket: "evento-04jun.firebasestorage.app",
+      messagingSenderId: "638789735095",
+      appId: "1:638789735095:web:6337210d4816af49e9f332",
+      measurementId: "G-S3ZKG6LJJK"
+    };
+    
+    const app = initializeApp(firebaseConfig);
+    const firestore = getFirestore(app);
+    
+    // Exportar globalmente
+    window.db = { firestore, doc, setDoc, getDoc, updateDoc, onSnapshot, query, collection, getDocs };
+    
+    // Verificar conexión
+    setTimeout(async () => {
+      try {
+        const snapshot = await getDocs(collection(window.db.firestore, "asistentes"));
+        console.log('🔥 Firebase conectado. Documentos:', snapshot.size);
+        showBubble(`🔥 Firebase OK: ${snapshot.size} registros`, 'info', 5000);
+      } catch (e) {
+        console.error('❌ Error Firebase:', e.message);
+        showBubble('⚠️ Modo offline - Sin conexión', 'warning', 5000);
+      }
+    }, 3000);
+  </script>
   
-  const firebaseConfig = {
-    apiKey: "AIzaSyCnM2jqvY3oxdrS5Js-HghWjk7Sjan7qUc",
-    authDomain: "evento-04jun.firebaseapp.com",
-    projectId: "evento-04jun",
-    storageBucket: "evento-04jun.firebasestorage.app",
-    messagingSenderId: "638789735095",
-    appId: "1:638789735095:web:6337210d4816af49e9f332",
-    measurementId: "G-S3ZKG6LJJK"
-  };
-  
-  const app = initializeApp(firebaseConfig);
-  const firestore = getFirestore(app);
-  
-  // Activar persistencia offline
-  //enableIndexedDbPersistence(firestore).catch(err => console.log('Persistencia:', err));
-  
-  // Exportar globalmente para usar en el resto del código
-  window.db = { firestore, doc, setDoc, getDoc, updateDoc, onSnapshot, query, collection };
-
-// ===== DEBUG: Verificar conexión Firebase =====
-setTimeout(async () => {
-  try {
-    const { getDocs, collection } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-    const snapshot = await getDocs(collection(window.db.firestore, "asistentes"));
-    console.log('🔥 Firebase conectado. Documentos:', snapshot.size);
-    showBubble(`🔥 Firebase OK: ${snapshot.size} registros`, 'info', 5000);
-  } catch (e) {
-    console.error('❌ Error Firebase:', e.message);
-    showBubble(`❌ Firebase Error: ${e.message}`, 'error', 8000);
-  }
-}, 3000);
-
-</script>
+  <!-- Librería para generar QR -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <style>
     :root {
@@ -62,79 +58,38 @@ setTimeout(async () => {
       --primary: #1e40af;
       --secondary: #fbbf24;
       --accent: #dc2626;
-      --bg: #f8fafc;
-      --card: #ffffff;
     }
     
-    * { 
-      box-sizing: border-box; 
-      margin: 0; 
-      padding: 0; 
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       min-height: 100vh;
       position: relative;
       overflow-x: hidden;
-      background: #0f172a;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #e2e8f0;
     }
     
-    /* ==========================================
-       FONDO DE PANTALLA - IMAGEN BASE64
-       ========================================== */
-    /*.bg-image {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      /* 
-         ═══════════════════════════════════════════════════════
-         INSTRUCCIONES PARA AGREGAR SU IMAGEN EN BASE64:
-         
-         1. Vaya a: https://www.base64-image.de/
-         2. Suba su imagen (fondo.jpg)
-         3. Copie el código Base64 completo
-         4. Reemplace el texto entre comillas en 'url('data:image/jpeg;base64,...')'
-         
-         Ejemplo:
-         background-image: url('data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAA...');
-         ═══════════════════════════════════════════════════════
-      */
-      /* background-image: url('data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAA...');
-      background-repeat: no-repeat;
-      background-attachment: fixed;
-      z-index: -2;
-    }*/
-    
-    /* Capa oscura semitransparente */
+    /* Capa de fondo simplificada */
     .bg-overlay {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(
-        135deg,
-        rgba(15, 23, 42, 0.85) 0%,
-        rgba(30, 58, 138, 0.75) 50%,
-        rgba(0, 0, 0, 0.7) 100%
-      );
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: radial-gradient(circle at 50% 50%, rgba(30, 58, 138, 0.4) 0%, rgba(15, 23, 42, 0.8) 100%);
       z-index: -1;
-      backdrop-filter: blur(3px);
+      pointer-events: none;
     }
     
-    /* Header con estilo patriótico */
     header {
-      text-align: center; 
-      padding: 20px 15px; 
+      text-align: center;
+      padding: 20px 15px;
       background: linear-gradient(135deg, rgba(30, 64, 175, 0.95) 0%, rgba(59, 130, 246, 0.9) 100%);
-      color: white; 
-      border-radius: 16px; 
+      color: white;
+      border-radius: 16px;
       margin: 15px auto;
       max-width: 450px;
-      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4), 0 0 20px rgba(59, 130, 246, 0.3);
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4);
       backdrop-filter: blur(10px);
       border: 2px solid rgba(255,255,255,0.1);
       position: relative;
@@ -156,19 +111,8 @@ setTimeout(async () => {
       50% { opacity: 0.7; transform: translateX(-50%) scale(1.1); }
     }
     
-    header h1 { 
-      font-size: 1.4rem; 
-      font-weight: 700;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-      margin-bottom: 5px;
-    }
-    
-    header .subtitle {
-      font-size: 0.85rem; 
-      opacity: 0.95; 
-      font-weight: 500;
-    }
-    
+    header h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 5px; }
+    header .subtitle { font-size: 0.85rem; opacity: 0.95; }
     header .brand {
       display: inline-block;
       margin-top: 8px;
@@ -177,480 +121,280 @@ setTimeout(async () => {
       border-radius: 20px;
       font-size: 0.75rem;
       font-weight: 600;
-      letter-spacing: 1px;
-      border: 1px solid rgba(255,255,255,0.3);
     }
     
-    /* Scanner Container */
     #reader {
-      width: 100%; 
-      max-width: 450px; 
+      width: 100%;
+      max-width: 450px;
       margin: 0 auto 15px;
-      border-radius: 20px; 
+      border-radius: 20px;
       overflow: hidden;
-      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5), 0 0 30px rgba(59, 130, 246, 0.3);
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
       background: #000;
       position: relative;
       z-index: 10;
       border: 3px solid rgba(255,255,255,0.2);
     }
     
-    #reader video { 
-      width: 100%; 
-      display: block; 
-    }
+    #reader video { width: 100%; display: block; }
     
-    /* Bubble Notification */
     .bubble {
-      position: fixed; 
-      top: 20px; 
-      left: 50%; 
+      position: fixed;
+      top: 20px;
+      left: 50%;
       transform: translateX(-50%);
-      padding: 16px 32px; 
-      border-radius: 50px; 
+      padding: 16px 32px;
+      border-radius: 50px;
       color: white;
-      font-weight: 700; 
-      font-size: 1.05rem; 
-      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5), 0 10px 10px -5px rgba(0,0,0,0.3);
-      z-index: 9999; 
-      display: none; 
+      font-weight: 700;
+      font-size: 1.05rem;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
+      z-index: 9999;
+      display: none;
       animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), fade 0.4s 2.6s ease;
-      max-width: 90%; 
+      max-width: 90%;
       text-align: center;
       backdrop-filter: blur(10px);
-      border: 2px solid rgba(255,255,255,0.3);
     }
     
-    .bubble.success { 
-      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-    }
+    .bubble.success { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); }
+    .bubble.warning { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #1f2937; }
+    .bubble.error { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+    .bubble.info { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
     
-    .bubble.warning { 
-      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); 
-      color: #1f2937;
+    @keyframes pop {
+      from { transform: translate(-50%, -40px) scale(0.8); opacity: 0; }
+      to { transform: translate(-50%, 0) scale(1); opacity: 1; }
     }
+    @keyframes fade { to { opacity: 0; transform: translate(-50%, -15px) scale(0.95); } }
     
-    .bubble.error { 
-      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    }
-    
-    .bubble.info { 
-      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    }
-    
-    @keyframes pop { 
-      from { 
-        transform: translate(-50%, -40px) scale(0.8); 
-        opacity: 0; 
-      } 
-      to { 
-        transform: translate(-50%, 0) scale(1); 
-        opacity: 1; 
-      } 
-    }
-    
-    @keyframes fade { 
-      to { 
-        opacity: 0; 
-        transform: translate(-50%, -15px) scale(0.95); 
-      } 
-    }
-    
-    /* Stats Cards */
     .stats-grid {
-      display: grid; 
-      grid-template-columns: repeat(2, 1fr); 
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
       gap: 12px;
-      max-width: 450px; 
+      max-width: 450px;
       margin: 0 auto 15px;
       position: relative;
       z-index: 10;
     }
     
     .stat-card {
-      background: rgba(255, 255, 255, 0.98); 
-      padding: 15px; 
+      background: rgba(255, 255, 255, 0.98);
+      padding: 15px;
       border-radius: 16px;
-      text-align: center; 
+      text-align: center;
       box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3);
       backdrop-filter: blur(10px);
-      border: 2px solid rgba(255,255,255,0.5);
       transition: transform 0.2s;
     }
     
-    .stat-card:hover {
-      transform: translateY(-3px);
-    }
-    
-    .stat-card .value { 
-      font-size: 1.8rem; 
-      font-weight: 800; 
+    .stat-card:hover { transform: translateY(-3px); }
+    .stat-card .value {
+      font-size: 1.8rem;
+      font-weight: 800;
       background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      background-clip: text;
     }
+    .stat-card .label { font-size: 0.85rem; color: #64748b; margin-top: 4px; }
     
-    .stat-card .label { 
-      font-size: 0.85rem; 
-      color: #64748b; 
-      margin-top: 4px;
-      font-weight: 500;
-    }
-    
-    /* Action Buttons */
     .actions {
-      max-width: 450px; 
-      margin: 0 auto 20px; 
-      display: flex; 
-      gap: 10px; 
+      max-width: 450px;
+      margin: 0 auto 20px;
+      display: flex;
+      gap: 10px;
       flex-wrap: wrap;
       position: relative;
       z-index: 10;
     }
     
     .btn {
-      flex: 1; 
-      min-width: 120px; 
-      padding: 14px 18px; 
+      flex: 1;
+      min-width: 120px;
+      padding: 14px 18px;
       border: none;
-      border-radius: 12px; 
-      font-weight: 700; 
+      border-radius: 12px;
+      font-weight: 700;
       font-size: 0.95rem;
-      cursor: pointer; 
-      transition: all 0.3s; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      gap: 8px;
-      backdrop-filter: blur(5px);
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
-    }
-    
-    .btn-primary { 
-      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); 
-      color: white;
-      border: 2px solid rgba(255,255,255,0.2);
-    }
-    
-    .btn-outline { 
-      background: rgba(255,255,255,0.95); 
-      color: #1e40af; 
-      border: 2px solid #1e40af;
-    }
-    
-    .btn-success { 
-      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); 
-      color: white;
-      border: 2px solid rgba(255,255,255,0.2);
-    }
-    
-    .btn:active { 
-      transform: scale(0.96); 
-    }
-    
-    .btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3);
-    }
-    
-    .btn:disabled { 
-      opacity: 0.6; 
-      cursor: not-allowed;
-      transform: none;
-    }
-    
-    /* Modal */
-    .modal {
-      position: fixed; 
-      top: 0; 
-      left: 0; 
-      width: 100%; 
-      height: 100%;
-      background: rgba(0,0,0,0.85); 
-      display: none; 
-      align-items: center; 
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
       justify-content: center;
-      z-index: 1000; 
+      gap: 8px;
+    }
+    
+    .btn-primary { background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; }
+    .btn-outline { background: rgba(255,255,255,0.95); color: #1e40af; border: 2px solid #1e40af; }
+    .btn-success { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
+    .btn:active { transform: scale(0.96); }
+    
+    .modal {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
       padding: 20px;
       backdrop-filter: blur(5px);
     }
     
-    .modal.active { 
-      display: flex; 
-    }
+    .modal.active { display: flex; }
     
     .modal-content {
       background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-      border-radius: 20px; 
-      padding: 25px; 
-      max-width: 450px; 
+      border-radius: 20px;
+      padding: 25px;
+      max-width: 450px;
       width: 100%;
-      max-height: 90vh; 
+      max-height: 90vh;
       overflow-y: auto;
       box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
-      border: 2px solid rgba(255,255,255,0.2);
+      color: #1e293b;
     }
     
-    .modal-header { 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       margin-bottom: 20px;
       padding-bottom: 15px;
       border-bottom: 2px solid #e2e8f0;
     }
     
-    .modal-title { 
-      font-weight: 800; 
-      font-size: 1.3rem;
-      color: #1e293b;
-    }
-    
-    .modal-close { 
-      background: #f1f5f9; 
-      border: none; 
-      font-size: 1.8rem; 
-      cursor: pointer; 
-      color: #64748b;
-      width: 40px;
-      height: 40px;
+    .modal-title { font-weight: 800; font-size: 1.3rem; }
+    .modal-close {
+      background: #f1f5f9;
+      border: none;
+      font-size: 1.8rem;
+      cursor: pointer;
+      width: 40px; height: 40px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.2s;
     }
+    .modal-close:hover { background: #e2e8f0; transform: rotate(90deg); }
     
-    .modal-close:hover {
-      background: #e2e8f0;
-      color: #1e293b;
-      transform: rotate(90deg);
-    }
-    
-    /* Form */
-    .form-group { 
-      margin-bottom: 18px; 
-    }
-    
-    .form-group label { 
-      display: block; 
-      margin-bottom: 8px; 
-      font-weight: 600; 
-      font-size: 0.95rem;
-      color: #334155;
-    }
-    
-    .form-group input, 
-    .form-group select {
-      width: 100%; 
-      padding: 14px; 
-      border: 2px solid #e2e8f0; 
+    .form-group { margin-bottom: 18px; }
+    .form-group label { display: block; margin-bottom: 8px; font-weight: 600; }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 14px;
+      border: 2px solid #e2e8f0;
       border-radius: 12px;
-      font-size: 1rem; 
-      transition: all 0.2s;
-      background: white;
+      font-size: 1rem;
     }
-    
-    .form-group input:focus,
-    .form-group select:focus { 
-      outline: none; 
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
       border-color: #3b82f6;
       box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
     }
+    .form-group small { display: block; margin-top: 6px; color: #64748b; font-size: 0.85rem; }
     
-    .form-group small {
-      display: block;
-      margin-top: 6px;
-      color: #64748b;
-      font-size: 0.85rem;
-    }
-    
-    /* Attendee Card */
     .attendee-card {
-      background: white; 
-      padding: 18px; 
-      border-radius: 16px; 
+      background: white;
+      padding: 18px;
+      border-radius: 16px;
       margin-bottom: 12px;
-      border-left: 5px solid #3b82f6; 
+      border-left: 5px solid #3b82f6;
       box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
       transition: all 0.2s;
     }
+    .attendee-card:hover { transform: translateX(5px); }
+    .attendee-card.scanned { border-left-color: #22c55e; background: #f0fdf4; }
+    .attendee-card .name { font-weight: 700; font-size: 1.15rem; margin-bottom: 6px; }
+    .attendee-card .meta { font-size: 0.9rem; color: #64748b; margin-bottom: 3px; }
+    .attendee-card .actions { margin-top: 12px; justify-content: flex-end; }
     
-    .attendee-card:hover {
-      transform: translateX(5px);
-      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.15);
-    }
+    .btn-sm { padding: 10px 18px; font-size: 0.85rem; min-width: auto; }
     
-    .attendee-card.scanned { 
-      border-left-color: #22c55e; 
-      background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
-    }
-    
-    .attendee-card .name { 
-      font-weight: 700; 
-      font-size: 1.15rem; 
-      margin-bottom: 6px;
-      color: #1e293b;
-    }
-    
-    .attendee-card .meta { 
-      font-size: 0.9rem; 
-      color: #64748b;
-      margin-bottom: 3px;
-    }
-    
-    .attendee-card .actions { 
-      margin-top: 12px; 
-      justify-content: flex-end; 
-    }
-    
-    .btn-sm { 
-      padding: 10px 18px; 
-      font-size: 0.85rem; 
-      min-width: auto; 
-    }
-    
-    /* WhatsApp Button */
     .wa-btn {
-      background: linear-gradient(135deg, #25D366 0%, #128C7E 100%); 
-      color: white; 
-      border: none; 
+      background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+      color: white;
+      border: none;
       padding: 12px 24px;
-      border-radius: 50px; 
-      font-weight: 700; 
-      display: inline-flex; 
-      align-items: center; 
+      border-radius: 50px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
       gap: 8px;
-      text-decoration: none; 
-      font-size: 0.95rem; 
       cursor: pointer;
-      box-shadow: 0 4px 6px -1px rgba(37, 211, 102, 0.3);
-      transition: all 0.3s;
     }
+    .wa-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(37, 211, 102, 0.4); }
     
-    .wa-btn:hover { 
-      transform: translateY(-2px);
-      box-shadow: 0 10px 15px -3px rgba(37, 211, 102, 0.4);
-    }
-    
-    /* Footer */
     footer {
-      text-align: center; 
-      padding: 25px 15px; 
-      color: rgba(255,255,255,0.9); 
+      text-align: center;
+      padding: 25px 15px;
+      color: rgba(255,255,255,0.9);
       font-size: 0.85rem;
-      max-width: 450px; 
+      max-width: 450px;
       margin: 0 auto;
       position: relative;
       z-index: 10;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
     }
+    footer strong { color: #fbbf24; }
     
-    footer strong {
-      color: #fbbf24;
-      font-weight: 700;
-    }
-    
-    /* Loading */
-    .loading { 
-      text-align: center; 
-      padding: 50px 20px; 
-      color: white;
+    .loading {
+      text-align: center;
+      padding: 50px 20px;
       background: rgba(255,255,255,0.1);
       border-radius: 16px;
-      backdrop-filter: blur(10px);
     }
     
     .spinner {
-      width: 50px; 
-      height: 50px; 
+      width: 50px; height: 50px;
       border: 5px solid rgba(255,255,255,0.3);
-      border-top-color: #fbbf24; 
+      border-top-color: #fbbf24;
       border-radius: 50%;
-      animation: spin 1s linear infinite; 
+      animation: spin 1s linear infinite;
       margin: 0 auto 20px;
     }
+    @keyframes spin { to { transform: rotate(360deg); } }
     
-    @keyframes spin { 
-      to { transform: rotate(360deg); } 
-    }
-    
-    /* Responsive */
     @media (max-width: 480px) {
       header h1 { font-size: 1.2rem; }
       .stat-card .value { font-size: 1.5rem; }
       .btn { font-size: 0.85rem; padding: 12px 14px; }
     }
     
-    /* Animación de entrada */
     @keyframes fadeInUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     
-    header, #reader, .stats-grid, .actions {
-      animation: fadeInUp 0.6s ease-out;
-    }
+    header, #reader, .stats-grid, .actions { animation: fadeInUp 0.6s ease-out; }
   </style>
-
-<!-- Librería para generar imágenes QR -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-
 </head>
 <body>
-
-  <!-- Fondo de pantalla -->
-  <div class="bg-image"></div>
   <div class="bg-overlay"></div>
-
-  <!-- Bubble Notification -->
   <div id="bubble" class="bubble"></div>
 
-  <!-- Header -->
   <header>
     <h1>🔐 Control de Acceso</h1>
     <div class="subtitle">Evento 04 de Junio • Escanea QR para validar</div>
     <div class="brand">⭐ VENTE CABIMAS ⭐</div>
   </header>
 
-  <!-- QR Scanner -->
   <div id="reader"></div>
 
-  <!-- Statistics -->
   <div class="stats-grid">
-    <div class="stat-card">
-      <div class="value" id="count-scanned">0</div>
-      <div class="label">✅ Ingresaron</div>
-    </div>
-    <div class="stat-card">
-      <div class="value" id="count-total">0</div>
-      <div class="label">📋 Registrados</div>
-    </div>
-    <div class="stat-card">
-      <div class="value" id="count-duplicates">0</div>
-      <div class="label">⚠️ Duplicados</div>
-    </div>
-    <div class="stat-card">
-      <div class="value" id="count-errors">0</div>
-      <div class="label">❌ Errores</div>
-    </div>
+    <div class="stat-card"><div class="value" id="count-scanned">0</div><div class="label">✅ Ingresaron</div></div>
+    <div class="stat-card"><div class="value" id="count-total">0</div><div class="label">📋 Registrados</div></div>
+    <div class="stat-card"><div class="value" id="count-duplicates">0</div><div class="label">⚠️ Duplicados</div></div>
+    <div class="stat-card"><div class="value" id="count-errors">0</div><div class="label">❌ Errores</div></div>
   </div>
 
-  <!-- Actions -->
   <div class="actions">
     <button class="btn btn-outline" onclick="openModal('modal-list')">📋 Lista</button>
     <button class="btn btn-outline" onclick="openModal('modal-add')">➕ Agregar</button>
     <button class="btn btn-primary" onclick="exportReport()">📊 Exportar</button>
   </div>
 
-  <!-- Modal: Lista de Asistentes -->
   <div id="modal-list" class="modal">
     <div class="modal-content">
       <div class="modal-header">
@@ -658,15 +402,11 @@ setTimeout(async () => {
         <button class="modal-close" onclick="closeModal('modal-list')">&times;</button>
       </div>
       <div id="attendees-list">
-        <div class="loading">
-          <div class="spinner"></div>
-          <p>Cargando asistentes...</p>
-        </div>
+        <div class="loading"><div class="spinner"></div><p>Cargando asistentes...</p></div>
       </div>
     </div>
   </div>
 
-  <!-- Modal: Agregar Asistente -->
   <div id="modal-add" class="modal">
     <div class="modal-content">
       <div class="modal-header">
@@ -708,108 +448,67 @@ setTimeout(async () => {
   </div>
 
   <footer>
-    <p>📱 Owner:.<strong> Lcdo. Julio Figueroa</strong></p>
+    <p>📱 Owner:. <strong>Lcdo. Julio Figueroa</strong></p>
     <p id="last-sync" style="margin-top:8px;font-size:0.8rem;opacity:0.9"></p>
     <p style="margin-top:10px;font-size:0.75rem;opacity:0.7">
-      <strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻🇪
+      <strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻
     </p>
   </footer>
 
   <script>
-    // ===== CONFIGURACIÓN GLOBAL =====
+    // ===== CONFIGURACIÓN =====
     const CONFIG = {
-      dbName: 'Evento04JunDB',
-      storeName: 'asistentes',
-      dbVersion: 2,
+      collection: 'asistentes',
       qrFormat: '{cedula}|{nombre}|{parroquia}|{telefono}',
       whatsappPrefix: 'https://wa.me/58'
     };
 
-    // ===== BASE DE DATOS (IndexedDB) =====
-    class Database {
-      constructor() { this.db = null; }
-      
-      async connect() {
-        return new Promise((resolve, reject) => {
-          const request = indexedDB.open(CONFIG.dbName, CONFIG.dbVersion);
-          
-          request.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains(CONFIG.storeName)) {
-              const store = db.createObjectStore(CONFIG.storeName, { keyPath: 'cedula' });
-              store.createIndex('telefono', 'telefono', { unique: false });
-              store.createIndex('scanned', 'scanned', { unique: false });
-              store.createIndex('timestamp', 'timestamp', { unique: false });
-            }
-          };
-          
-          request.onsuccess = () => { this.db = request.result; resolve(this.db); };
-          request.onerror = () => reject(request.error);
-        });
-      }
-      
+    // ===== BASE DE DATOS FIRESTORE =====
+    const DB = {
       async add(data) {
-        return new Promise((resolve, reject) => {
-          const tx = this.db.transaction(CONFIG.storeName, 'readwrite');
-          const store = tx.objectStore(CONFIG.storeName);
-          const request = store.add({
-            ...data,
-            scanned: false,
-            qrSent: false,
-            timestamp: new Date().toISOString(),
-            whatsapp: this.formatWhatsApp(data.telefono)
-          });
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
+        const { db, doc, setDoc } = window;
+        await setDoc(doc(db.firestore, db.collection, data.cedula), {
+          ...data,
+          scanned: false,
+          scannedCount: 0,
+          qrSent: false,
+          error: false,
+          timestamp: new Date().toISOString(),
+          whatsapp: `${CONFIG.whatsappPrefix}${String(data.telefono).replace(/^0+/, '')}`
         });
-      }
+      },
       
       async get(cedula) {
-        return new Promise((resolve, reject) => {
-          const tx = this.db.transaction(CONFIG.storeName, 'readonly');
-          const store = tx.objectStore(CONFIG.storeName);
-          const request = store.get(cedula);
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
-        });
-      }
+        const { db, doc, getDoc } = window;
+        const docSnap = await getDoc(doc(db.firestore, db.collection, cedula));
+        return docSnap.exists() ? docSnap.data() : null;
+      },
       
       async update(cedula, updates) {
-        const existing = await this.get(cedula);
-        if (!existing) throw new Error('No encontrado');
-        return new Promise((resolve, reject) => {
-          const tx = this.db.transaction(CONFIG.storeName, 'readwrite');
-          const store = tx.objectStore(CONFIG.storeName);
-          const request = store.put({ ...existing, ...updates, timestamp: new Date().toISOString() });
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
+        const { db, doc, updateDoc } = window;
+        await updateDoc(doc(db.firestore, db.collection, cedula), {
+          ...updates,
+          timestamp: new Date().toISOString()
         });
-      }
+      },
       
       async getAll() {
-        return new Promise((resolve, reject) => {
-          const tx = this.db.transaction(CONFIG.storeName, 'readonly');
-          const store = tx.objectStore(CONFIG.storeName);
-          const request = store.getAll();
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
-        });
-      }
+        const { db, collection, getDocs } = window;
+        const snapshot = await getDocs(collection(db.firestore, db.collection));
+        const attendees = [];
+        snapshot.forEach(doc => attendees.push({ cedula: doc.id, ...doc.data() }));
+        return attendees;
+      },
       
       async getCounts() {
         const all = await this.getAll();
         return {
           total: all.length,
           scanned: all.filter(a => a.scanned).length,
-          duplicates: all.filter(a => a.scannedCount > 1).length,
+          duplicates: all.filter(a => (a.scannedCount || 0) > 1).length,
           errors: all.filter(a => a.error).length
         };
-      }
-      
-      formatWhatsApp(phone) {
-        const cleaned = String(phone).replace(/^0+/, '');
-        return `${CONFIG.whatsappPrefix}${cleaned}`;
-      }
+      },
       
       generateQRContent(person) {
         return CONFIG.qrFormat
@@ -818,11 +517,7 @@ setTimeout(async () => {
           .replace('{parroquia}', person.parroquia)
           .replace('{telefono}', person.telefono);
       }
-      
-      async close() { if (this.db) this.db.close(); }
-    }
-
-    const db = new Database();
+    };
 
     // ===== UI UTILITIES =====
     function showBubble(message, type = 'info', duration = 3000) {
@@ -830,68 +525,52 @@ setTimeout(async () => {
       bubble.textContent = message;
       bubble.className = `bubble ${type}`;
       bubble.style.display = 'block';
-      bubble.style.animation = 'none';
-      setTimeout(() => { bubble.offsetHeight; bubble.style.animation = ''; }, 10);
       setTimeout(() => { bubble.style.display = 'none'; }, duration);
     }
 
-    function updateStats() {
-      db.getCounts().then(counts => {
+    async function updateStats() {
+      try {
+        const counts = await DB.getCounts();
         document.getElementById('count-scanned').textContent = counts.scanned;
         document.getElementById('count-total').textContent = counts.total;
         document.getElementById('count-duplicates').textContent = counts.duplicates;
         document.getElementById('count-errors').textContent = counts.errors;
-        document.getElementById('last-sync').textContent = 
-          `Última actualización: ${new Date().toLocaleTimeString('es-VE')}`;
-      });
+        document.getElementById('last-sync').textContent = `Última actualización: ${new Date().toLocaleTimeString('es-VE')}`;
+      } catch (e) { console.error(e); }
     }
 
-    function openModal(id) {
+    window.openModal = (id) => {
       document.getElementById(id).classList.add('active');
       if (id === 'modal-list') renderAttendeesList();
-    }
+    };
     
-    function closeModal(id) {
-      document.getElementById(id).classList.remove('active');
-    }
+    window.closeModal = (id) => document.getElementById(id).classList.remove('active');
 
     // ===== QR SCANNER =====
     function initScanner() {
       const html5QrCode = new Html5Qrcode('reader');
-      
-      const config = {
-        fps: 10,
-        qrbox: { width: 280, height: 280 },
-        rememberLastUsedCamera: true,
-        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
-      };
-
       html5QrCode.start(
         { facingMode: 'environment' },
-        config,
+        { fps: 10, qrbox: { width: 280, height: 280 } },
         async (decodedText) => {
           try {
             await processQR(decodedText);
             await new Promise(r => setTimeout(r, 2000));
-          } catch (e) {
-            console.error('Error procesando QR:', e);
-          }
+          } catch (e) { console.error('Error QR:', e); }
         },
-        (errorMessage) => { /* Silenciar errores de enfoque */ }
+        (errorMessage) => {}
       ).catch(err => {
         showBubble('⚠️ Permiso de cámara requerido', 'error');
-        console.error('Error iniciando scanner:', err);
       });
     }
 
     async function processQR(decodedText) {
       try {
-        const parts = decodedText.split('|');
+        const parts = decodedText.split('|').map(p => p.trim());
         if (parts.length < 4) throw new Error('Formato QR inválido');
         
         const [cedula, nombre, parroquia, telefono] = parts;
-        
-        const existing = await db.get(cedula);
+        const existing = await DB.get(cedula);
         
         if (!existing) {
           showBubble(`❌ "${nombre}" no está autorizado`, 'error');
@@ -900,18 +579,17 @@ setTimeout(async () => {
         }
         
         if (existing.scanned) {
-          const count = (existing.scannedCount || 1) + 1;
-          await db.update(cedula, { scannedCount: count });
+          const count = (existing.scannedCount || 0) + 1;
+          await DB.update(cedula, { scannedCount: count });
           showBubble(`⚠️ ${nombre} ya ingresó (${count} veces)`, 'warning');
           return;
         }
         
-        await db.update(cedula, { scanned: true, scannedCount: 1 });
+        await DB.update(cedula, { scanned: true, scannedCount: 1 });
         showBubble(`✅ ${nombre} • ${parroquia}`, 'success');
         updateStats();
         
       } catch (err) {
-        console.error('Error procesando QR:', err);
         showBubble('❌ Error al validar QR', 'error');
         await logError('unknown', err.message);
       }
@@ -930,39 +608,32 @@ setTimeout(async () => {
       container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando...</p></div>';
       
       try {
-        const attendees = await db.getAll();
+        const attendees = await DB.getAll();
         attendees.sort((a, b) => a.nombre.localeCompare(b.nombre));
         
-        if (attendees.length === 0) {
-          container.innerHTML = '<p style="text-align:center;color:#64748b;padding:20px">No hay asistentes registrados</p>';
+        if (!attendees.length) {
+          container.innerHTML = '<p style="text-align:center;padding:20px;color:#64748b">Sin registros</p>';
           return;
         }
         
-        container.innerHTML = attendees.map(person => `
-          <div class="attendee-card ${person.scanned ? 'scanned' : ''}">
-            <div class="name">${person.nombre}</div>
-            <div class="meta">🆔 ${person.cedula} • 📍 ${person.parroquia}</div>
-            <div class="meta">📱 ${person.telefono}</div>
-            <div class="actions">
-              ${!person.qrSent ? `
-                <button class="btn btn-sm wa-btn" onclick="sendQR('${person.cedula}')">
-                  📤 Enviar QR
-                </button>
-              ` : `<span style="color:var(--success);font-weight:600">✓ QR Enviado</span>`}
-              ${person.scanned ? `<span style="color:var(--success);font-weight:600;margin-left:10px">✓ Ingresó</span>` : ''}
+        container.innerHTML = attendees.map(p => `
+          <div class="attendee-card ${p.scanned ? 'scanned' : ''}">
+            <div style="font-weight:700;font-size:1.1rem">${p.nombre}</div>
+            <div style="font-size:0.85rem;color:#64748b;margin:4px 0">🆔 ${p.cedula} • 📍 ${p.parroquia}</div>
+            <div class="actions" style="justify-content:flex-end">
+              ${!p.qrSent ? `<button class="btn btn-sm wa-btn" onclick="sendQR('${p.cedula}')">📤 Enviar QR</button>` : `<span style="color:#22c55e;font-weight:600">✓ Enviado</span>`}
+              ${p.scanned ? `<span style="color:#22c55e;font-weight:600;margin-left:10px">✓ Ingresó</span>` : ''}
             </div>
           </div>
         `).join('');
-        
       } catch (err) {
-        container.innerHTML = `<p style="color:var(--error);padding:20px">Error: ${err.message}</p>`;
+        container.innerHTML = `<p style="padding:20px;color:#ef4444">Error: ${err.message}</p>`;
       }
     }
 
     // ===== AGREGAR ASISTENTE =====
     document.getElementById('form-add').addEventListener('submit', async (e) => {
       e.preventDefault();
-      
       const data = {
         cedula: document.getElementById('add-cedula').value.trim().toUpperCase(),
         nombre: document.getElementById('add-nombre').value.trim(),
@@ -971,23 +642,23 @@ setTimeout(async () => {
       };
       
       try {
-        const existing = await db.get(data.cedula);
-        if (existing) {
-          showBubble('⚠️ Esta cédula ya está registrada', 'warning');
+        if (await DB.get(data.cedula)) {
+          showBubble('⚠️ Cédula ya registrada', 'warning');
           return;
         }
         
-        await db.add(data);
-        showBubble('✅ Asistente registrado', 'success');
+        await DB.add(data);
+        showBubble('✅ Registrado en Firebase', 'success');
         
-        const qrContent = db.generateQRContent({ ...data, whatsapp: db.formatWhatsApp(data.telefono) });
-        const whatsappLink = db.formatWhatsApp(data.telefono);
-        const message = encodeURIComponent(`🎟️ *Tu código de acceso al Evento 04-Jun*\n\n👤 ${data.nombre}\n🆔 ${data.cedula}\n📍 ${data.parroquia}\n\n📱 Muestra este código en la entrada:\n${qrContent}`);
+        // Generar QR y enviar
+        const qrContent = DB.generateQRContent(data);
+        const whatsappLink = `${CONFIG.whatsappPrefix}${String(data.telefono).replace(/^0+/, '')}`;
+        const message = encodeURIComponent(`🎟️ *Tu código de acceso*\n👤 ${data.nombre}\n🆔 ${data.cedula}\n📍 ${data.parroquia}\n\n📱 Muestra este código:\n${qrContent}`);
         
-        if (confirm(`📤 ¿Enviar QR a ${data.nombre} por WhatsApp?\n\n${whatsappLink}`)) {
+        if (confirm(`📤 ¿Enviar QR por WhatsApp?`)) {
           window.open(`${whatsappLink}?text=${message}`, '_blank');
-          await db.update(data.cedula, { qrSent: true });
-          showBubble('📤 QR enviado por WhatsApp', 'info');
+          await DB.update(data.cedula, { qrSent: true });
+          showBubble('📤 QR enviado', 'info');
         }
         
         e.target.reset();
@@ -996,235 +667,129 @@ setTimeout(async () => {
         renderAttendeesList();
         
       } catch (err) {
-        console.error('Error agregando asistente:', err);
-        showBubble('❌ Error al registrar', 'error');
+        showBubble('❌ Error: ' + err.message, 'error');
       }
     });
 
-    // ===== ENVIAR QR POR WHATSAPP =====
-   // ===== ENVIAR QR: FLUJO REAL PARA WHATSAPP =====
-async function sendQR(cedula) {
-    try {
-        const person = await db.get(cedula);
-        if (!person) throw new Error('No encontrado');
-
-        const qrContent = db.generateQRContent(person);
+    // ===== ENVIAR QR =====
+    window.sendQR = async (cedula) => {
+      try {
+        const person = await DB.get(cedula);
+        if (!person) return;
+        
+        const qrContent = DB.generateQRContent(person);
         const modalId = 'modal-qr-share';
-        const existing = document.getElementById(modalId);
-        if (existing) existing.remove();
-
+        document.getElementById(modalId)?.remove();
+        
         const html = `
-            <div id="${modalId}" class="modal active" style="z-index:9999; background:rgba(0,0,0,0.85);">
-                <div class="modal-content" style="text-align:center; max-width:380px;">
-                    <div class="modal-header">
-                        <span class="modal-title">🎟️ QR de ${person.nombre}</span>
-                        <button class="modal-close" onclick="document.getElementById('${modalId}').remove()">&times;</button>
-                    </div>
-                    <div id="qr-box" style="background:#fff; padding:15px; display:inline-block; border-radius:12px; margin:10px 0;"></div>
-                    <p style="font-size:0.85rem; color:#64748b; margin:10px 0;">
-                        ⚠️ WhatsApp no permite adjuntar imágenes automáticamente.<br>
-                        Usa el botón <strong>📤 Compartir</strong> y selecciona WhatsApp.
-                    </p>
-                    <div class="actions" style="flex-direction:column; gap:10px;">
-                        <button onclick="shareQRNative('${cedula}', '${person.nombre}')" class="btn btn-success btn-sm" style="width:100%;">
-                            📤 Compartir (Android/iOS)
-                        </button>
-                        <button onclick="downloadQRImg('${cedula}')" class="btn btn-outline btn-sm" style="width:100%;">
-                            💾 Descargar Imagen
-                        </button>
-                    </div>
-                </div>
+          <div id="${modalId}" class="modal active" style="z-index:9999;">
+            <div class="modal-content" style="text-align:center;">
+              <div class="modal-header">
+                <span class="modal-title">🎟️ QR de ${person.nombre}</span>
+                <button class="modal-close" onclick="document.getElementById('${modalId}').remove()">&times;</button>
+              </div>
+              <div id="qr-box" style="background:#fff;padding:15px;display:inline-block;border-radius:12px;margin:10px 0;"></div>
+              <p style="font-size:0.85rem;color:#64748b;margin:10px 0;">Usa 📤 Compartir o 💾 Descargar</p>
+              <div class="actions" style="flex-direction:column;gap:10px;">
+                <button onclick="shareQRNative('${cedula}','${person.nombre}')" class="btn btn-success btn-sm" style="width:100%">📤 Compartir</button>
+                <button onclick="downloadQRImg('${cedula}')" class="btn btn-outline btn-sm" style="width:100%">💾 Descargar</button>
+              </div>
             </div>
-        `;
+          </div>`;
+        
         document.body.insertAdjacentHTML('beforeend', html);
-
-        // Generar QR visual
+        
         setTimeout(() => {
-            new QRCode(document.getElementById("qr-box"), {
-                text: qrContent, width: 220, height: 220,
-                colorDark: "#0f172a", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.H
-            });
+          new QRCode(document.getElementById("qr-box"), {
+            text: qrContent, width: 220, height: 220,
+            colorDark: "#0f172a", colorLight: "#ffffff"
+          });
         }, 100);
+        
+      } catch (e) { showBubble('❌ Error', 'error'); }
+    };
 
-    } catch (e) {
-        showBubble('❌ Error generando QR', 'error');
-    }
-}
-
-async function shareQRNative(cedula, nombre) {
-    const canvas = document.querySelector('#qr-box canvas');
-    if (!canvas) return showBubble(' Generando imagen...', 'info');
-    
-    try {
+    window.shareQRNative = async (cedula, nombre) => {
+      const canvas = document.querySelector('#qr-box canvas');
+      if (!canvas) return;
+      
+      try {
         canvas.toBlob(async (blob) => {
-            const file = new File([blob], `QR_${cedula}.png`, { type: 'image/png' });
-            if (navigator.share && navigator.canShare({ files: [file] })) {
-                await navigator.share({
-                    title: `Acceso Evento - ${nombre}`,
-                    text: `Hola ${nombre}, este es tu código QR para el evento del 04/06.`,
-                    files: [file]
-                });
-                await db.update(cedula, { qrSent: true });
-                showBubble('✅ Compartido exitosamente', 'success');
-                document.getElementById('modal-qr-share').remove();
-                renderAttendeesList();
-            } else {
-                showBubble('️ Tu dispositivo no soporta compartir archivos. Usa "Descargar".', 'warning');
-            }
+          const file = new File([blob], `QR_${cedula}.png`, { type: 'image/png' });
+          if (navigator.share && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: `Acceso Evento - ${nombre}`,
+              text: `Código QR para el evento`,
+              files: [file]
+            });
+            await DB.update(cedula, { qrSent: true });
+            showBubble('✅ Compartido', 'success');
+            document.getElementById('modal-qr-share').remove();
+            renderAttendeesList();
+          } else {
+            showBubble('⚠️ No soporta compartir', 'warning');
+          }
         }, 'image/png');
-    } catch (err) {
-        console.log('Share cancelado por usuario');
-    }
-}
+      } catch (err) { console.log('Cancelado'); }
+    };
 
-function downloadQRImg(cedula) {
-    const canvas = document.querySelector('#qr-box canvas');
-    if (!canvas) return;
-    canvas.toBlob(blob => {
+    window.downloadQRImg = (cedula) => {
+      const canvas = document.querySelector('#qr-box canvas');
+      if (!canvas) return;
+      
+      canvas.toBlob(blob => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = `QR_${cedula}.png`;
-        a.click(); URL.revokeObjectURL(url);
-        db.update(cedula, { qrSent: true }).then(() => {
-            showBubble('✅ Imagen descargada. Adjúntala en WhatsApp.', 'success');
-            document.getElementById('modal-qr-share').remove();
-            renderAttendeesList();
-        });
-    }, 'image/png');
-}
-
-// Descargar la imagen del canvas QR
-function descargarQR(cedula) {
-    const canvas = document.querySelector('#qr-container canvas');
-    if (!canvas) {
-        showBubble('⏳ Generando imagen...', 'info');
-        return;
-    }
-    
-    canvas.toBlob((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `QR_Acceso_${cedula}.png`;
-        document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        
-        // Marcar como enviado solo si descarga exitosamente
-        db.update(cedula, { qrSent: true }).then(() => {
-            showBubble('✅ Imagen descargada. Adjúntala en WhatsApp.', 'success');
-            document.getElementById('modal-qr-action').remove();
-            renderAttendeesList();
-        });
-    }, 'image/png');
-}
+        DB.update(cedula, { qrSent: true });
+        showBubble('✅ Descargado', 'success');
+        document.getElementById('modal-qr-share').remove();
+        renderAttendeesList();
+      }, 'image/png');
+    };
 
-// Compartir usando Web Share API (Opcional, depende del SO)
-async function compartirDirecto(cedula, nombre) {
-    const canvas = document.querySelector('#qr-container canvas');
-    if (!canvas) return;
-    
-    try {
-        canvas.toBlob(async (blob) => {
-            const file = new File([blob], `QR_${cedula}.png`, { type: 'image/png' });
-            const shareData = {
-                title: `Acceso Evento - ${nombre}`,
-                text: `Hola ${nombre}, este es tu código QR para el evento del 04 de Junio.`,
-                files: [file]
-            };
-
-            if (navigator.canShare && navigator.canShare(shareData)) {
-                await navigator.share(shareData);
-                await db.update(cedula, { qrSent: true });
-                showBubble('✅ QR compartido exitosamente', 'success');
-                document.getElementById('modal-qr-action').remove();
-                renderAttendeesList();
-            } else {
-                showBubble('⚠️ Tu dispositivo no soporta compartir archivos. Usa "Descargar".', 'warning');
-            }
-        }, 'image/png');
-    } catch (err) {
-        console.error('Share cancelado o fallido', err);
-        showBubble('📥 Compartido cancelado. Usa la opción Descargar.', 'info');
-    }
-}
-
-    // ===== EXPORTAR REPORTES =====
+    // ===== EXPORTAR =====
     async function exportReport() {
       try {
-        const attendees = await db.getAll();
+        const attendees = await DB.getAll();
         const errors = JSON.parse(localStorage.getItem('scan_errors') || '[]');
         
-        const csvContent = [
-          ['Cédula', 'Nombre', 'Parroquia', 'Teléfono', 'WhatsApp', '¿Ingresó?', 'Veces Escaneado', 'QR Enviado', 'Fecha Registro'],
+        const csv = [
+          ['Cédula','Nombre','Parroquia','Teléfono','Ingresó','Veces','QR','Fecha'],
           ...attendees.map(a => [
-            a.cedula, a.nombre, a.parroquia, a.telefono, a.whatsapp,
-            a.scanned ? 'Sí' : 'No', a.scannedCount || 0, a.qrSent ? 'Sí' : 'No',
-            new Date(a.timestamp).toLocaleString('es-VE')
+            a.cedula, a.nombre, a.parroquia, a.telefono,
+            a.scanned ? 'Sí' : 'No', a.scannedCount || 0,
+            a.qrSent ? 'Sí' : 'No', new Date(a.timestamp).toLocaleString('es-VE')
           ])
-        ].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+        ].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
         
-        const errorsContent = [
-          ['Identificador', 'Error', 'Fecha'],
-          ...errors.map(e => [e.identifier, e.message, new Date(e.timestamp).toLocaleString('es-VE')])
-        ].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-        
-        downloadFile(`reporte_asistentes_04jun_${Date.now()}.csv`, csvContent, 'text/csv');
-        downloadFile(`reporte_errores_04jun_${Date.now()}.csv`, errorsContent, 'text/csv');
-        
-        showBubble('📊 Reportes exportados exitosamente', 'success');
-        
-      } catch (err) {
-        console.error('Error exportando:', err);
-        showBubble('❌ Error al exportar reportes', 'error');
-      }
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `reporte_${Date.now()}.csv`;
+        a.click();
+        showBubble('📊 Exportado', 'success');
+      } catch (err) { showBubble('❌ Error', 'error'); }
     }
 
-    function downloadFile(filename, content, mimeType) {
-      const blob = new Blob([content], { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click();
-      document.body.removeChild(a); URL.revokeObjectURL(url);
-    }
-
-    // ===== INICIALIZACIÓN =====
+    // ===== INICIALIZAR =====
     async function init() {
       try {
-        await db.connect();
         initScanner();
         updateStats();
-        
         if ('serviceWorker' in navigator) {
-          console.log('🔧 PWA ready for offline use');
+          navigator.serviceWorker.register('./sw.js').catch(console.warn);
         }
-        
-      } catch (err) {
-        console.error('Error inicializando:', err);
-        showBubble('⚠️ Error de inicialización', 'error');
-      }
+      } catch (err) { showBubble('⚠️ Error', 'error'); }
     }
 
-    document.querySelectorAll('.modal').forEach(modal => {
-      modal.addEventListener('click', (e) => {
-        if (e.target === modal) closeModal(modal.id);
-      });
-    });
-
+    document.querySelectorAll('.modal').forEach(m => 
+      m.addEventListener('click', e => { if(e.target === m) closeModal(m.id); })
+    );
+    
     document.addEventListener('DOMContentLoaded', init);
   </script>
-
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js')
-        .then(reg => console.log('✅ Service Worker registrado'))
-        .catch(err => console.log('❌ Error SW:', err));
-    });
-  }
-</script>
-
 </body>
 </html>

@@ -1,38 +1,26 @@
 // sw.js - Service Worker para Evento 04-Jun
-// En el evento 'fetch' o 'install' de tu sw.js
-// En tu archivo sw.js, reemplaza o agrega esta validación al inicio del fetch:
-self.addEventListener('fetch', event => {
-  // 🔴 IGNORAR extensiones de Chrome y esquemas no HTTP/HTTPS
-  if (!event.request.url.startsWith('http') && !event.request.url.startsWith('chrome-extension://')) {
-    return;
-  }
-
-  event.respondWith(
-    caches.match(event.request).then(response => {
-      return response || fetch(event.request);
-    })
-  );
-});
-  
-  // ... resto de tu lógica de caché
-const CACHE_NAME = 'access-control-v1';
+const CACHE_NAME = 'evento-04jun-v1';
 const ASSETS = [
-  './', // index.html
-  './html5-qrcode.min.js', // Librería QR (CRÍTICO)
-  './manifest.json'
+  './',
+  './manifest.json',
+  'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'
 ];
 
-// 1. INSTALACIÓN: Guardar archivos en caché
+// 1. INSTALACIÓN
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('✅ Cacheando archivos del evento...');
-      return cache.addAll(ASSETS);
+      console.log('✅ Cacheando recursos...');
+      return cache.addAll(ASSETS).catch(err => {
+        console.log('⚠️ Algunos recursos no se cachearon:', err);
+      });
     })
   );
+  self.skipWaiting();
 });
 
-// 2. ACTIVACIÓN: Limpiar cachés viejas
+// 2. ACTIVACIÓN
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keyList) => {
@@ -46,21 +34,41 @@ self.addEventListener('activate', (e) => {
       );
     })
   );
+  self.clients.claim();
 });
 
-// 3. INTERCEPTAR PETICIONES: Cache-First Strategy
-self.addEventListener('fetch', (e) => {
-  e.respondWith(
-    caches.match(e.request).then((response) => {
-      // Si está en caché, úsalo (funciona sin internet)
+// 3. INTERCEPTAR PETICIONES
+self.addEventListener('fetch', (event) => {
+  // IGNORAR esquemas no soportados
+  const url = new URL(event.request.url);
+  if (!url.protocol.startsWith('http')) {
+    return;
+  }
+  
+  // Estrategia: Cache First, luego Network
+  event.respondWith(
+    caches.match(event.request).then((response) => {
       if (response) {
         return response;
       }
-      // Si no, ve a internet y guarda una copia
-      return fetch(e.request).then((networkResponse) => {
-        return caches.open(CACHE_NAME).then((cache) => {
-          cache.put(e.request, networkResponse.clone());
+      
+      return fetch(event.request).then((networkResponse) => {
+        // No cachear respuestas no exitosas
+        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
           return networkResponse;
+        }
+        
+        const responseToCache = networkResponse.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseToCache);
+        });
+        
+        return networkResponse;
+      }).catch(() => {
+        // Si falla la red y no está en caché
+        return new Response('Offline - Sin conexión', {
+          status: 503,
+          statusText: 'Service Unavailable'
         });
       });
     })
