@@ -16,7 +16,7 @@
 <!-- Firebase SDK vía CDN (sin npm) -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, query, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, query } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   
   const firebaseConfig = {
     apiKey: "AIzaSyCnM2jqvY3oxdrS5Js-HghWjk7Sjan7qUc",
@@ -32,7 +32,7 @@
   const firestore = getFirestore(app);
   
   // Activar persistencia offline
-  enableIndexedDbPersistence(firestore).catch(err => console.log('Persistencia:', err));
+  //enableIndexedDbPersistence(firestore).catch(err => console.log('Persistencia:', err));
   
   // Exportar globalmente para usar en el resto del código
   window.db = { firestore, doc, setDoc, getDoc, updateDoc, onSnapshot, query, collection };
