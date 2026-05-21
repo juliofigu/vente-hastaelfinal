@@ -7,22 +7,23 @@
   <meta name="description" content="Control de Acceso - Evento 04 Junio - Vente Cabimas">
   <title>🔐 Acceso Evento 04-Jun | Vente Cabimas</title>
   
-  <!-- Librería QR Scanner -->
+  <!-- Librería QR Scanner (CDN) -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   
-  <!-- Firebase SDK + App Code (UNIFICADO) -->
+  <!-- Firebase SDK + App Code (UNIFICADO EN UN SOLO MÓDULO) -->
   <script type="module">
-    // ===== IMPORTS =====
+    // ===== IMPORTS DE FIREBASE =====
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { 
       getFirestore, collection, doc, setDoc, getDoc, updateDoc, 
-      onSnapshot, query, getDocs, enableIndexedDbPersistence 
+      onSnapshot, query, getDocs 
+      // ✅ enableIndexedDbPersistence ya no es necesario (deprecated)
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     
-    // ===== CONFIG =====
+    // ===== CONFIGURACIÓN FIREBASE =====
     const firebaseConfig = {
       apiKey: "AIzaSyCnM2jqvY3oxdrS5Js-HghWjk7Sjan7qUc",
       authDomain: "evento-04jun.firebaseapp.com",
@@ -33,20 +34,16 @@
       measurementId: "G-S3ZKG6LJJK"
     };
     
-    // ===== INICIALIZACIÓN FIREBASE =====
+    // ===== INICIALIZACIÓN =====
     const app = initializeApp(firebaseConfig);
     const firestore = getFirestore(app);
-    
-    enableIndexedDbPersistence(firestore).catch(err => {
-      if (err.code === 'failed-precondition') console.log('⚠️ Persistencia: múltiples tabs');
-      else if (err.code === 'unimplemented') console.log('⚠️ Persistencia: navegador no soportado');
-    });
     
     // ===== BASE DE DATOS (Firestore) =====
     const DB = {
       async add(data) {
         await setDoc(doc(firestore, "asistentes", data.cedula), {
-          ...data, scanned: false, scannedCount: 0, qrSent: false, error: false,
+          ...data,
+          scanned: false, scannedCount: 0, qrSent: false, error: false,
           timestamp: new Date().toISOString(),
           whatsapp: `https://wa.me/58${String(data.telefono).replace(/^0+/, '')}`
         });
@@ -56,7 +53,9 @@
         return snap.exists() ? snap.data() : null;
       },
       async update(cedula, updates) {
-        await updateDoc(doc(firestore, "asistentes", cedula), { ...updates, timestamp: new Date().toISOString() });
+        await updateDoc(doc(firestore, "asistentes", cedula), { 
+          ...updates, timestamp: new Date().toISOString() 
+        });
       },
       async getAll() {
         const snapshot = await getDocs(collection(firestore, "asistentes"));
@@ -83,28 +82,30 @@
     // ===== UI UTILITIES =====
     function showBubble(msg, type='info', dur=3000) {
       const b = document.getElementById('bubble');
+      if (!b) return;
       b.textContent = msg; b.className = `bubble ${type}`; b.style.display = 'block';
       setTimeout(() => b.style.display = 'none', dur);
     }
-    window.showBubble = showBubble;  // ✅ Exponer globalmente
+    window.showBubble = showBubble;
     
     async function updateStats() {
       try {
         const c = await DB.getCounts();
-        document.getElementById('count-scanned').textContent = c.scanned;
-        document.getElementById('count-total').textContent = c.total;
-        document.getElementById('count-duplicates').textContent = c.duplicates;
-        document.getElementById('count-errors').textContent = c.errors;
-        document.getElementById('last-sync').textContent = `Última actualización: ${new Date().toLocaleTimeString('es-VE')}`;
+        const el = (id) => document.getElementById(id);
+        if (el('count-scanned')) el('count-scanned').textContent = c.scanned;
+        if (el('count-total')) el('count-total').textContent = c.total;
+        if (el('count-duplicates')) el('count-duplicates').textContent = c.duplicates;
+        if (el('count-errors')) el('count-errors').textContent = c.errors;
+        if (el('last-sync')) el('last-sync').textContent = `Última actualización: ${new Date().toLocaleTimeString('es-VE')}`;
       } catch(e) { console.error(e); }
     }
-    window.updateStats = updateStats;  // ✅
+    window.updateStats = updateStats;
     
     window.openModal = (id) => {
-      document.getElementById(id).classList.add('active');
-      if (id === 'modal-list') renderAttendeesList();
+      const el = document.getElementById(id);
+      if (el) { el.classList.add('active'); if (id === 'modal-list') renderAttendeesList(); }
     };
-    window.closeModal = (id) => document.getElementById(id).classList.remove('active');
+    window.closeModal = (id) => { const el = document.getElementById(id); if (el) el.classList.remove('active'); };
 
     // ===== QR SCANNER =====
     function initScanner() {
@@ -113,15 +114,15 @@
         showBubble('⚠️ Librería QR no disponible', 'warning');
         return;
       }
+      const reader = document.getElementById('reader');
+      if (!reader) return;
       const html5QrCode = new Html5Qrcode('reader');
       html5QrCode.start(
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 280, height: 280 } },
         async (decodedText) => {
-          try {
-            await processQR(decodedText);
-            await new Promise(r => setTimeout(r, 2000));
-          } catch (e) { console.error('Error QR:', e); }
+          try { await processQR(decodedText); await new Promise(r => setTimeout(r, 2000)); } 
+          catch (e) { console.error('Error QR:', e); }
         },
         (errorMessage) => {}
       ).catch(err => showBubble('⚠️ Permiso de cámara requerido', 'error'));
@@ -131,23 +132,23 @@
       try {
         const parts = decodedText.split('|').map(p => p.trim());
         if (parts.length < 4) throw new Error('Formato QR inválido');
-        const [cedula, nombre, parroquia, telefono] = parts;
+        const [cedula, nombre, parroquia] = parts;
         const existing = await DB.get(cedula);
         if (!existing) { showBubble(`❌ "${nombre}" no autorizado`, 'error'); return; }
         if (existing.scanned) {
           const count = (existing.scannedCount||0) + 1;
           await DB.update(cedula, { scannedCount: count });
-          showBubble(`⚠️ ${nombre} ya ingresó (${count}x)`, 'warning');
-          return;
+          showBubble(`⚠️ ${nombre} ya ingresó (${count}x)`, 'warning'); return;
         }
         await DB.update(cedula, { scanned: true, scannedCount: 1 });
-        showBubble(`✅ ${nombre} • ${parroquia}`, 'success');
-        updateStats();
+        showBubble(`✅ ${nombre} • ${parroquia}`, 'success'); updateStats();
       } catch (err) { showBubble('❌ Error QR', 'error'); }
     }
 
+    // ===== LISTA DE ASISTENTES =====
     async function renderAttendeesList() {
       const container = document.getElementById('attendees-list');
+      if (!container) return;
       container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando...</p></div>';
       try {
         const attendees = await DB.getAll();
@@ -169,35 +170,36 @@
     }
 
     // ===== AGREGAR ASISTENTE =====
-    document.getElementById('form-add').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const data = {
-        cedula: document.getElementById('add-cedula').value.trim().toUpperCase(),
-        nombre: document.getElementById('add-nombre').value.trim(),
-        parroquia: document.getElementById('add-parroquia').value,
-        telefono: document.getElementById('add-telefono').value.replace(/\D/g, '')
-      };
-      try {
-        if (await DB.get(data.cedula)) { showBubble('⚠️ Cédula ya registrada', 'warning'); return; }
-        await DB.add(data);
-        showBubble('✅ Registrado en Firebase', 'success');
-        const qrContent = DB.generateQRContent(data);
-        const whatsappLink = `https://wa.me/58${String(data.telefono).replace(/^0+/, '')}`;
-        const message = encodeURIComponent(`🎟️ *Tu código de acceso*\n👤 ${data.nombre}\n🆔 ${data.cedula}\n📍 ${data.parroquia}\n\n📱 Muestra este código:\n${qrContent}`);
-        if (confirm(`📤 ¿Enviar QR por WhatsApp?`)) {
-          window.open(`${whatsappLink}?text=${message}`, '_blank');
-          await DB.update(data.cedula, { qrSent: true });
-          showBubble('📤 QR enviado', 'info');
-        }
-        e.target.reset(); closeModal('modal-add'); updateStats(); renderAttendeesList();
-      } catch (err) { showBubble('❌ Error: ' + err.message, 'error'); }
-    });
+    function setupFormAdd() {
+      const form = document.getElementById('form-add');
+      if (!form) return;
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = {
+          cedula: document.getElementById('add-cedula').value.trim().toUpperCase(),
+          nombre: document.getElementById('add-nombre').value.trim(),
+          parroquia: document.getElementById('add-parroquia').value,
+          telefono: document.getElementById('add-telefono').value.replace(/\D/g, '')
+        };
+        try {
+          if (await DB.get(data.cedula)) { showBubble('⚠️ Cédula ya registrada', 'warning'); return; }
+          await DB.add(data); showBubble('✅ Registrado en Firebase', 'success');
+          const qrContent = DB.generateQRContent(data);
+          const whatsappLink = `https://wa.me/58${String(data.telefono).replace(/^0+/, '')}`;
+          const message = encodeURIComponent(`🎟️ *Tu código de acceso*\n👤 ${data.nombre}\n🆔 ${data.cedula}\n📍 ${data.parroquia}\n\n📱 Muestra este código:\n${qrContent}`);
+          if (confirm(`📤 ¿Enviar QR por WhatsApp?`)) {
+            window.open(`${whatsappLink}?text=${message}`, '_blank');
+            await DB.update(data.cedula, { qrSent: true }); showBubble('📤 QR enviado', 'info');
+          }
+          e.target.reset(); closeModal('modal-add'); updateStats(); renderAttendeesList();
+        } catch (err) { showBubble('❌ Error: ' + err.message, 'error'); }
+      });
+    }
 
     // ===== ENVIAR QR =====
     window.sendQR = async (cedula) => {
       try {
-        const person = await DB.get(cedula);
-        if (!person) return;
+        const person = await DB.get(cedula); if (!person) return;
         if (typeof QRCode === 'undefined') { showBubble('⚠️ Librería QR no cargó', 'warning'); return; }
         const qrContent = DB.generateQRContent(person);
         const modalId = 'modal-qr-share';
@@ -223,6 +225,7 @@
     };
 
     window.shareQRNative = async (cedula, nombre) => {
+      // Fallback para qrcodejs que renderiza <img> en lugar de <canvas>
       let canvas = document.querySelector('#qr-box canvas');
       if (!canvas) {
         const img = document.querySelector('#qr-box img');
@@ -236,10 +239,8 @@
           const file = new File([blob], `QR_${cedula}.png`, { type: 'image/png' });
           if (navigator.share && navigator.canShare({ files: [file] })) {
             await navigator.share({ title: `Acceso Evento - ${nombre}`, text: `Código QR para el evento`, files: [file] });
-            await DB.update(cedula, { qrSent: true });
-            showBubble('✅ Compartido', 'success');
-            document.getElementById('modal-qr-share').remove();
-            renderAttendeesList();
+            await DB.update(cedula, { qrSent: true }); showBubble('✅ Compartido', 'success');
+            document.getElementById('modal-qr-share').remove(); renderAttendeesList();
           } else { showBubble('⚠️ No soporta compartir', 'warning'); }
         }, 'image/png');
       } catch (err) { console.log('Cancelado'); }
@@ -258,10 +259,8 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = `QR_${cedula}.png`; a.click(); URL.revokeObjectURL(url);
-        DB.update(cedula, { qrSent: true });
-        showBubble('✅ Descargado', 'success');
-        document.getElementById('modal-qr-share').remove();
-        renderAttendeesList();
+        DB.update(cedula, { qrSent: true }); showBubble('✅ Descargado', 'success');
+        document.getElementById('modal-qr-share').remove(); renderAttendeesList();
       }, 'image/png');
     };
 
@@ -280,24 +279,38 @@
         showBubble('📊 Exportado', 'success');
       } catch (err) { showBubble('❌ Error', 'error'); }
     }
-    window.exportReport = exportReport;  // ✅
+    window.exportReport = exportReport;
 
     // ===== INICIALIZAR =====
     async function init() {
+      // Verificar conexión Firebase
       try {
         const snapshot = await getDocs(collection(firestore, "asistentes"));
         console.log('🔥 Firebase conectado. Documentos:', snapshot.size);
         showBubble(`🔥 Firebase OK: ${snapshot.size} registros`, 'info', 5000);
       } catch (e) { console.error('❌ Error Firebase:', e.message); showBubble('⚠️ Modo offline', 'warning', 5000); }
-      initScanner(); updateStats();
-      if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
+      
+      initScanner(); updateStats(); setupFormAdd();
+      
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js').catch(console.warn);
+      }
     }
 
-    document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if(e.target === m) closeModal(m.id); }));
-    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); } else { init(); }
+    // Event listeners para modales
+    document.querySelectorAll('.modal').forEach(m => 
+      m.addEventListener('click', e => { if(e.target === m) closeModal(m.id); })
+    );
+    
+    // Iniciar cuando el DOM esté listo
+    if (document.readyState === 'loading') { 
+      document.addEventListener('DOMContentLoaded', init); 
+    } else { 
+      init(); 
+    }
   </script>
 
-  <!-- Librería para generar QR -->
+  <!-- Librería para generar QR (después del módulo para asegurar carga) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <style>
