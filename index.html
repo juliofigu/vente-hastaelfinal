@@ -413,32 +413,67 @@
     }
 
     // ===== ENVIAR QR =====
-    window.sendQR = async (cedula) => {
+    // ===== ENVIAR QR: MENSAJE DE TEXTO CON ENLACE A miQR =====
+    async function sendQR(cedula) {
       try {
-        const person = await DB.get(cedula); if (!person) return;
-        if (typeof QRCode === 'undefined') { showBubble('⚠️ Librería QR no cargó', 'warning'); return; }
-        const qrContent = DB.generateQRContent(person);
-        const modalId = 'modal-qr-share';
-        document.getElementById(modalId)?.remove();
-        const html = `
-          <div id="${modalId}" class="modal active" style="z-index:9999;">
-            <div class="modal-content" style="text-align:center;">
-              <div class="modal-header"><span class="modal-title">🎟️ QR de ${person.nombre}</span>
-                <button class="modal-close" onclick="document.getElementById('${modalId}').remove()">&times;</button></div>
-              <div id="qr-box" style="background:#fff;padding:15px;display:inline-block;border-radius:12px;margin:10px 0;"></div>
-              <p style="font-size:0.85rem;color:#64748b;margin:10px 0;">Usa 📤 Compartir o 💾 Descargar</p>
-              <div class="actions" style="flex-direction:column;gap:10px;">
-                <button onclick="shareQRNative('${cedula}','${person.nombre}')" class="btn btn-success btn-sm" style="width:100%">📤 Compartir</button>
-                <button onclick="downloadQRImg('${cedula}')" class="btn btn-outline btn-sm" style="width:100%">💾 Descargar</button>
-              </div>
-            </div>
-          </div>`;
-        document.body.insertAdjacentHTML('beforeend', html);
-        setTimeout(() => {
-          new QRCode(document.getElementById("qr-box"), { text: qrContent, width: 220, height: 220, colorDark: "#0f172a", colorLight: "#ffffff" });
-        }, 100);
-      } catch (e) { showBubble('❌ Error', 'error'); }
-    };
+        const person = await db.get(cedula);
+        if (!person) throw new Error('Asistente no encontrado');
+    
+        // ✅ Enlace oficial para descargar QR
+        const qrDownloadLink = 'https://juliofigu.github.io/miQR';
+    
+        // ✅ Mensaje formateado para WhatsApp (negrita con *, saltos con \n)
+        // Nota: WhatsApp no soporta HTML, solo formato básico con asteriscos
+        const message = encodeURIComponent(
+    `🎟️ *TU CÓDIGO DE ACCESO - EVENTO 04 DE JUNIO*
+
+    Hola *${person.nombre}*, 
+
+    ✅ Tu registro ha sido confirmado exitosamente.
+
+    🔐 *PARA OBTENER TU CÓDIGO QR:*
+
+    *${qrDownloadLink}*
+
+    📍 *INSTRUCCIONES:*
+    1️⃣ Haz clic en el enlace de arriba
+    2️⃣ Ingresa tu cédula: *${person.cedula}*
+    3️⃣ Descarga o captura tu código QR
+    4️⃣ Muéstralo en la entrada del evento
+
+    ⚠️ *IMPORTANTE:*
+    • Este código es personal e intransferible
+    • Guárdalo en tu galería para acceso rápido
+    • No lo compartas con terceros
+
+    🇻🇪 *VENTE CABIMAS* • 14 Años por la Libertad`
+       );
+    
+    // ✅ Construir enlace de WhatsApp
+    const whatsappNumber = person.telefono.replace(/^0+/, '');
+    const whatsappLink = `https://wa.me/58${whatsappNumber}?text=${message}`;
+    
+    // ✅ Mostrar confirmación al operador
+    if (confirm(`📤 ¿Enviar instrucciones por WhatsApp a ${person.nombre}?\n\n📱 ${whatsappNumber}`)) {
+      // Abrir WhatsApp en nueva pestaña
+      const newWindow = window.open(whatsappLink, '_blank');
+      
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+        showBubble('⚠️ Bloqueador de ventanas emergentes activado. Permite pop-ups para enviar el mensaje.', 'warning');
+        return;
+      }
+      
+      // Marcar como enviado en la base de datos
+      await db.update(cedula, { qrSent: true });
+      showBubble('📤 Instrucciones enviadas por WhatsApp', 'success');
+      renderAttendeesList();
+    }
+    
+  } catch (err) {
+    console.error('Error enviando QR:', err);
+    showBubble('❌ Error al preparar el mensaje', 'error');
+  }
+}
 
     window.shareQRNative = async (cedula, nombre) => {
       let canvas = document.querySelector('#qr-box canvas');
