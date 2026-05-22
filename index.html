@@ -386,9 +386,11 @@
     }
 
     // ===== AGREGAR ASISTENTE =====
+    // ===== AGREGAR ASISTENTE =====
     function setupFormAdd() {
       const form = document.getElementById('form-add');
       if (!form) return;
+  
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const data = {
@@ -397,18 +399,76 @@
           parroquia: document.getElementById('add-parroquia').value,
           telefono: document.getElementById('add-telefono').value.replace(/\D/g, '')
         };
+    
         try {
-          if (await DB.get(data.cedula)) { showBubble('⚠️ Cédula ya registrada', 'warning'); return; }
-          await DB.add(data); showBubble('✅ Registrado en Firebase', 'success');
-          const qrContent = DB.generateQRContent(data);
-          const whatsappLink = `https://wa.me/58${String(data.telefono).replace(/^0+/, '')}`;
-          const message = encodeURIComponent(`🎟️ *Tu código de acceso*\n👤 ${data.nombre}\n🆔 ${data.cedula}\n📍 ${data.parroquia}\n\n📱 Muestra este código:\n${qrContent}`);
-          if (confirm(`📤 ¿Enviar QR por WhatsApp?`)) {
-            window.open(`${whatsappLink}?text=${message}`, '_blank');
-            await DB.update(data.cedula, { qrSent: true }); showBubble('📤 QR enviado', 'info');
+          if (await DB.get(data.cedula)) { 
+            showBubble('⚠️ Cédula ya registrada', 'warning'); 
+            return; 
           }
-          e.target.reset(); closeModal('modal-add'); updateStats(); renderAttendeesList();
-        } catch (err) { showBubble('❌ Error: ' + err.message, 'error'); }
+      
+          await DB.add(data); 
+          showBubble('✅ Registrado en Firebase', 'success');
+      
+          // ✅ Usar el MISMO formato que sendQR() con enlace a miQR
+          const qrDownloadLink = 'https://juliofigu.github.io/miQR';
+          const message = encodeURIComponent(
+    `🎟️ *TU CÓDIGO DE ACCESO - EVENTO 04 DE JUNIO*
+
+    Hola *${data.nombre}*, 
+
+    ✅ Tu registro ha sido confirmado exitosamente.
+
+    🔐 *PARA OBTENER TU CÓDIGO QR:*
+
+    *${qrDownloadLink}*
+
+    📍 *INSTRUCCIONES:*
+    1️⃣ Haz clic en el enlace de arriba
+    2️⃣ Ingresa tu cédula: *${data.cedula}*
+    3️⃣ Descarga o captura tu código QR
+    4️⃣ Muéstralo en la entrada del evento
+
+    ⚠️ *IMPORTANTE:*
+    • Este código es personal e intransferible
+    • Guárdalo en tu galería para acceso rápido
+    • No lo compartas con terceros
+
+    🇻🇪 *VENTE CABIMAS* • 14 Años por la Libertad`
+          );
+      
+          const whatsappNumber = data.telefono.replace(/^0+/, '');
+          const whatsappLink = `https://wa.me/58${whatsappNumber}?text=${message}`;
+      
+          // ✅ Confirmación mejorada con detección de bloqueadores
+          if (confirm(`📤 ¿Enviar instrucciones por WhatsApp a ${data.nombre}?\n\n📱 +58 ${whatsappNumber}`)) {
+            // Intentar abrir WhatsApp
+            const newWindow = window.open(whatsappLink, '_blank');
+        
+            // Verificar si fue bloqueado
+            if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+             // Fallback: copiar enlace al portapapeles y mostrar instrucción
+             navigator.clipboard?.writeText(whatsappLink).catch(() => {});
+             showBubble('⚠️ Pop-up bloqueado. Enlace copiado al portapapeles.', 'warning');
+          
+              // Mostrar mensaje alternativo
+              const fallbackMsg = `Si WhatsApp no se abrió, copia y pega este enlace en tu navegador:\n\n${whatsappLink}`;
+              alert(fallbackMsg);
+            } else {
+             // Éxito: marcar como enviado
+             await DB.update(data.cedula, { qrSent: true });
+             showBubble('📤 Instrucciones enviadas por WhatsApp', 'success');
+            }
+         }
+      
+          e.target.reset(); 
+          closeModal('modal-add'); 
+          updateStats(); 
+          renderAttendeesList();
+      
+        } catch (err) { 
+         console.error('Error registrando asistente:', err);
+         showBubble('❌ Error: ' + err.message, 'error'); 
+        }
       });
     }
 
