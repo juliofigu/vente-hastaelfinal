@@ -480,6 +480,24 @@
       console.log('🔧 Debug tools ready: usa window.__DEBUG__ en consola');
     }
 
+    // ===== DEBUG: Exponer funciones para consola =====
+if (typeof window !== 'undefined') {
+  window.__DEBUG__ = {
+    // Funciones de validación de formato
+    isHash: (str) => /^[a-f0-9]{64}$/.test(str?.trim()),
+    isOldFormat: (str) => str?.split('|')?.length >= 4,
+    
+    // Referencia a processQR si existe
+    processQR: typeof processQR === 'function' ? processQR : null,
+    
+    // Estado de la app
+    dbReady: typeof db !== 'undefined' && db !== null,
+    firestoreReady: typeof window.db?.firestore !== 'undefined'
+  };
+  
+  console.log('🔧 Debug tools ready. Usa window.__DEBUG__ en consola');
+}
+
   </script>
 
   <!-- Librería para generar QR (después del módulo para asegurar carga) -->
