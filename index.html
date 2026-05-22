@@ -128,22 +128,103 @@
       ).catch(err => showBubble('⚠️ Permiso de cámara requerido', 'error'));
     }
 
-    async function processQR(decodedText) {
-      try {
-        const parts = decodedText.split('|').map(p => p.trim());
-        if (parts.length < 4) throw new Error('Formato QR inválido');
-        const [cedula, nombre, parroquia] = parts;
-        const existing = await DB.get(cedula);
-        if (!existing) { showBubble(`❌ "${nombre}" no autorizado`, 'error'); return; }
-        if (existing.scanned) {
-          const count = (existing.scannedCount||0) + 1;
-          await DB.update(cedula, { scannedCount: count });
-          showBubble(`⚠️ ${nombre} ya ingresó (${count}x)`, 'warning'); return;
-        }
-        await DB.update(cedula, { scanned: true, scannedCount: 1 });
-        showBubble(`✅ ${nombre} • ${parroquia}`, 'success'); updateStats();
-      } catch (err) { showBubble('❌ Error QR', 'error'); }
+    /**
+ * Procesa un QR escaneado que contiene SOLO un hash seguro
+ */
+async function processQR(decodedText) {
+  try {
+    const scannedHash = decodedText.trim();
+    
+    // ✅ VALIDAR formato del hash (SHA-256 = 64 caracteres hex)
+    if (!/^[a-f0-9]{64}$/.test(scannedHash)) {
+      showBubble('❌ Código QR inválido o corrupto', 'error');
+      await logError('invalid_hash', `Formato incorrecto: ${scannedHash.substring(0, 16)}...`);
+      return;
     }
+    
+    let cedula = null;
+    
+    // 🔍 BUSCAR en Firebase Firestore usando índice hashIndex
+    if (window.db?.firestore) {
+      const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      
+      const hashDoc = await getDoc(doc(window.db.firestore, "hashIndex", scannedHash));
+      if (hashDoc.exists()) {
+        cedula = hashDoc.data().cedula;
+      }
+    }
+    
+    // 🔄 FALLBACK: Buscar en IndexedDB local (modo offline)
+    if (!cedula && db) {
+      const allAttendees = await db.getAll();
+      const match = allAttendees.find(a => a.qrHash === scannedHash);
+      if (match) cedula = match.cedula;
+    }
+    
+    // ❌ HASH NO ENCONTRADO
+    if (!cedula) {
+      showBubble('❌ QR no registrado en el sistema', 'error');
+      await logError(scannedHash.substring(0, 8) + '...', 'Hash no encontrado en ninguna BD');
+      return;
+    }
+    
+    // 👤 OBTENER datos del asistente
+    const attendee = await db.get(cedula);
+    if (!attendee) {
+      showBubble('❌ Asistente no encontrado', 'error');
+      await logError(cedula, 'Asistente existe en índice pero no en DB principal');
+      return;
+    }
+    
+    // ✅ VALIDAR estado de escaneo
+    if (attendee.scanned) {
+      const count = (attendee.scannedCount || 1) + 1;
+      
+      await db.update(cedula, { 
+        scannedCount: count,
+        lastScanned: new Date().toISOString()
+      });
+      
+      // Sincronizar con Firebase
+      if (window.db?.firestore) {
+        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+        await updateDoc(doc(window.db.firestore, "asistentes", cedula), {
+          scannedCount: count,
+          lastScanned: new Date().toISOString()
+        });
+      }
+      
+      showBubble(`⚠️ ${attendee.nombre} ya ingresó (${count} veces)`, 'warning');
+      return;
+    }
+    
+    // ✅ PRIMER INGRESO: Marcar como escaneado
+    await db.update(cedula, { 
+      scanned: true, 
+      scannedCount: 1,
+      firstScanned: new Date().toISOString()
+    });
+    
+    // Sincronizar con Firebase
+    if (window.db?.firestore) {
+      const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      await updateDoc(doc(window.db.firestore, "asistentes", cedula), {
+        scanned: true,
+        scannedCount: 1,
+        firstScanned: new Date().toISOString()
+      });
+    }
+    
+    // ✅ CONFIRMACIÓN (sin exponer datos sensibles)
+    showBubble(`✅ Acceso válido • ${attendee.parroquia}`, 'success');
+    updateStats();
+    
+  } catch (err) {
+    console.error('Error procesando QR:', err);
+    showBubble('❌ Error al validar QR', 'error');
+    await logError('unknown', err.message);
+  }
+}
 
     // ===== LISTA DE ASISTENTES =====
     async function renderAttendeesList() {
@@ -420,7 +501,7 @@
     </div>
   </div>
   <footer>
-    <p>📱 Owner: <strong>Lcdo. Julio Figueroa</strong></p>
+    <p>📱 Owner:. <strong>Lcdo. Julio Figueroa</strong></p>
     <p id="last-sync" style="margin-top:8px;font-size:0.8rem;opacity:0.9"></p>
     <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻</p>
   </footer>
