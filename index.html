@@ -177,7 +177,7 @@
             ` : ''}
             
             <div style="background: #f8fafc; padding: 15px; border-radius: 12px; margin: 0 -25px 20px -25px; border-left: 4px solid ${config.color};">
-              <div style="font-size: 1rem; color: #334155;">${message}</div>
+              <div style="font-size: 1rem; color: #334155; white-space: pre-line;">${message}</div>
             </div>
             
             <button id="btn-ready-next" class="btn btn-success" style="width: 100%; padding: 16px; font-size: 1.1rem;">
@@ -412,106 +412,65 @@
       });
     }
 
-    // ===== ENVIAR QR =====
     // ===== ENVIAR QR: MENSAJE DE TEXTO CON ENLACE A miQR =====
-    async function sendQR(cedula) {
+    window.sendQR = async (cedula) => {
       try {
-        const person = await db.get(cedula);
+        const person = await DB.get(cedula);
         if (!person) throw new Error('Asistente no encontrado');
-    
+        
         // ✅ Enlace oficial para descargar QR
         const qrDownloadLink = 'https://juliofigu.github.io/miQR';
-    
+        
         // ✅ Mensaje formateado para WhatsApp (negrita con *, saltos con \n)
-        // Nota: WhatsApp no soporta HTML, solo formato básico con asteriscos
         const message = encodeURIComponent(
-    `🎟️ *TU CÓDIGO DE ACCESO - EVENTO 04 DE JUNIO*
+`🎟️ *TU CÓDIGO DE ACCESO - EVENTO 04 DE JUNIO*
 
-    Hola *${person.nombre}*, 
+Hola *${person.nombre}*, 
 
-    ✅ Tu registro ha sido confirmado exitosamente.
+✅ Tu registro ha sido confirmado exitosamente.
 
-    🔐 *PARA OBTENER TU CÓDIGO QR:*
+🔐 *PARA OBTENER TU CÓDIGO QR:*
 
-    *${qrDownloadLink}*
+*${qrDownloadLink}*
 
-    📍 *INSTRUCCIONES:*
-    1️⃣ Haz clic en el enlace de arriba
-    2️⃣ Ingresa tu cédula: *${person.cedula}*
-    3️⃣ Descarga o captura tu código QR
-    4️⃣ Muéstralo en la entrada del evento
+📍 *INSTRUCCIONES:*
+1️⃣ Haz clic en el enlace de arriba
+2️⃣ Ingresa tu cédula: *${person.cedula}*
+3️⃣ Descarga o captura tu código QR
+4️⃣ Muéstralo en la entrada del evento
 
-    ⚠️ *IMPORTANTE:*
-    • Este código es personal e intransferible
-    • Guárdalo en tu galería para acceso rápido
-    • No lo compartas con terceros
+⚠️ *IMPORTANTE:*
+• Este código es personal e intransferible
+• Guárdalo en tu galería para acceso rápido
+• No lo compartas con terceros
 
-    🇻🇪 *VENTE CABIMAS* • 14 Años por la Libertad`
-       );
-    
-    // ✅ Construir enlace de WhatsApp
-    const whatsappNumber = person.telefono.replace(/^0+/, '');
-    const whatsappLink = `https://wa.me/58${whatsappNumber}?text=${message}`;
-    
-    // ✅ Mostrar confirmación al operador
-    if (confirm(`📤 ¿Enviar instrucciones por WhatsApp a ${person.nombre}?\n\n📱 ${whatsappNumber}`)) {
-      // Abrir WhatsApp en nueva pestaña
-      const newWindow = window.open(whatsappLink, '_blank');
-      
-      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-        showBubble('⚠️ Bloqueador de ventanas emergentes activado. Permite pop-ups para enviar el mensaje.', 'warning');
-        return;
+🇻🇪 *VENTE CABIMAS* • 14 Años por la Libertad`
+        );
+        
+        // ✅ Construir enlace de WhatsApp
+        const whatsappNumber = person.telefono.replace(/^0+/, '');
+        const whatsappLink = `https://wa.me/58${whatsappNumber}?text=${message}`;
+        
+        // ✅ Mostrar confirmación al operador
+        if (confirm(`📤 ¿Enviar instrucciones por WhatsApp a ${person.nombre}?\n\n📱 ${whatsappNumber}`)) {
+          // Abrir WhatsApp en nueva pestaña
+          const newWindow = window.open(whatsappLink, '_blank');
+          
+          if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+            showBubble('⚠️ Bloqueador de ventanas emergentes activado. Permite pop-ups para enviar el mensaje.', 'warning');
+            return;
+          }
+          
+          // Marcar como enviado en la base de datos
+          await DB.update(cedula, { qrSent: true });
+          showBubble('📤 Instrucciones enviadas por WhatsApp', 'success');
+          renderAttendeesList();
+        }
+        
+      } catch (err) {
+        console.error('Error enviando QR:', err);
+        showBubble('❌ Error al preparar el mensaje', 'error');
       }
-      
-      // Marcar como enviado en la base de datos
-      await db.update(cedula, { qrSent: true });
-      showBubble('📤 Instrucciones enviadas por WhatsApp', 'success');
-      renderAttendeesList();
-    }
-    
-  } catch (err) {
-    console.error('Error enviando QR:', err);
-    showBubble('❌ Error al preparar el mensaje', 'error');
-  }
-}
-
-    window.shareQRNative = async (cedula, nombre) => {
-      let canvas = document.querySelector('#qr-box canvas');
-      if (!canvas) {
-        const img = document.querySelector('#qr-box img');
-        if (!img) return showBubble('❌ QR no generado', 'error');
-        canvas = document.createElement('canvas');
-        canvas.width = img.width; canvas.height = img.height;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-      }
-      try {
-        canvas.toBlob(async (blob) => {
-          const file = new File([blob], `QR_${cedula}.png`, { type: 'image/png' });
-          if (navigator.share && navigator.canShare({ files: [file] })) {
-            await navigator.share({ title: `Acceso Evento - ${nombre}`, text: `Código QR para el evento`, files: [file] });
-            await DB.update(cedula, { qrSent: true }); showBubble('✅ Compartido', 'success');
-            document.getElementById('modal-qr-share').remove(); renderAttendeesList();
-          } else { showBubble('⚠️ No soporta compartir', 'warning'); }
-        }, 'image/png');
-      } catch (err) { console.log('Cancelado'); }
-    };
-
-    window.downloadQRImg = (cedula) => {
-      let canvas = document.querySelector('#qr-box canvas');
-      if (!canvas) {
-        const img = document.querySelector('#qr-box img');
-        if (!img) return;
-        canvas = document.createElement('canvas');
-        canvas.width = img.width; canvas.height = img.height;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-      }
-      canvas.toBlob(blob => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `QR_${cedula}.png`; a.click(); URL.revokeObjectURL(url);
-        DB.update(cedula, { qrSent: true }); showBubble('✅ Descargado', 'success');
-        document.getElementById('modal-qr-share').remove(); renderAttendeesList();
-      }, 'image/png');
     };
 
     // ===== EXPORTAR =====
@@ -556,6 +515,7 @@
       init(); 
     }
 
+    // ===== DEBUG =====
     if (typeof window !== 'undefined' && 
         (window.location.hostname === 'localhost' || window.location.hostname.includes('github.io'))) {
       
@@ -583,6 +543,7 @@
     }
   </script>
 
+  <!-- Librería para generar QR -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <style>
@@ -694,9 +655,9 @@
     </div>
   </div>
   <footer>
-    <p>📱 Owner: <strong>Lcdo. Julio Figueroa</strong></p>
+    <p>📱 Owner:. <strong>Lcdo. Julio Figueroa</strong></p>
     <p id="last-sync" style="margin-top:8px;font-size:0.8rem;opacity:0.9"></p>
-    <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻</p>
+    <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻🇪</p>
   </footer>
 </body>
 </html>
