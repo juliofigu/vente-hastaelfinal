@@ -410,6 +410,18 @@
     } else { 
       init(); 
     }
+
+    // ===== DEBUG: Exponer para consola (solo desarrollo) =====
+    if (window.location.hostname === 'localhost' || window.location.hostname.includes('github.io')) {
+      window.__DEBUG__ = {
+        DB: typeof DB !== 'undefined' ? DB : null,
+        processQR: typeof processQR !== 'undefined' ? processQR : null,
+        testHashFormat: (str) => /^[a-f0-9]{64}$/.test(str),
+        testOldFormat: (str) => str.split('|').length >= 4
+      };
+      console.log('🔧 Debug tools ready: usa window.__DEBUG__');
+    }
+
   </script>
 
   <!-- Librería para generar QR (después del módulo para asegurar carga) -->
