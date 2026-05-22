@@ -20,7 +20,6 @@
     import { 
       getFirestore, collection, doc, setDoc, getDoc, updateDoc, 
       onSnapshot, query, getDocs 
-      // ✅ enableIndexedDbPersistence ya no es necesario (deprecated)
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     
     // ===== CONFIGURACIÓN FIREBASE =====
@@ -119,6 +118,17 @@
     };
     window.closeModal = (id) => { const el = document.getElementById(id); if (el) el.classList.remove('active'); };
 
+    // ===== LOG DE ERRORES =====
+    async function logError(identifier, message) {
+      try {
+        const errors = JSON.parse(localStorage.getItem('scan_errors') || '[]');
+        errors.push({ identifier, message, timestamp: new Date().toISOString() });
+        localStorage.setItem('scan_errors', JSON.stringify(errors.slice(-100)));
+      } catch (e) {
+        console.warn('⚠️ No se pudo guardar el error:', e.message);
+      }
+    }
+
     // ===== QR SCANNER =====
     function initScanner() {
       if (typeof Html5Qrcode === 'undefined') {
@@ -140,111 +150,104 @@
       ).catch(err => showBubble('⚠️ Permiso de cámara requerido', 'error'));
     }
 
-    /*** Procesa un QR escaneado que contiene SOLO un hash seguro */
-  async function processQR(decodedText) {
-  try {
-    const scannedValue = decodedText.trim();
-    
-    // 🔍 ¿Es un hash seguro? (64 caracteres hexadecimales)
-    const isSecureHash = /^[a-f0-9]{64}$/.test(scannedValue);
-    
-    let cedula = null;
-    
-    if (isSecureHash) {
-      // ✅ Buscar por hash en Firebase (colección hashIndex)
+    // ===== PROCESAR QR ESCANEADO =====
+    async function processQR(decodedText) {
       try {
-        const hashDoc = await getDoc(doc(firestore, "hashIndex", scannedValue));
-        if (hashDoc.exists()) {
-          cedula = hashDoc.data().cedula;
-        }
-      } catch (e) {
-        console.warn('⚠️ No se pudo consultar hashIndex:', e.message);
-      }
-      
-      // 🔄 Fallback: Buscar en Firestore principal por todos los documentos
-      if (!cedula) {
-        const snapshot = await getDocs(collection(firestore, "asistentes"));
-        for (const d of snapshot.docs) {
-          const data = d.data();
-          if (data.qrHash === scannedValue) {
-            cedula = d.id;
-            break;
+        const scannedValue = decodedText.trim();
+        
+        // 🔍 ¿Es un hash seguro? (64 caracteres hexadecimales)
+        const isSecureHash = /^[a-f0-9]{64}$/.test(scannedValue);
+        
+        let cedula = null;
+        
+        if (isSecureHash) {
+          // ✅ Buscar por hash en Firebase (colección hashIndex)
+          try {
+            const hashDoc = await getDoc(doc(firestore, "hashIndex", scannedValue));
+            if (hashDoc.exists()) {
+              cedula = hashDoc.data().cedula;
+            }
+          } catch (e) {
+            console.warn('⚠️ No se pudo consultar hashIndex:', e.message);
           }
+          
+          // 🔄 Fallback: Buscar en Firestore principal por todos los documentos
+          if (!cedula) {
+            const snapshot = await getDocs(collection(firestore, "asistentes"));
+            for (const d of snapshot.docs) {
+              const data = d.data();
+              if (data.qrHash === scannedValue) {
+                cedula = d.id;
+                break;
+              }
+            }
+          }
+          
+          if (!cedula) {
+            showBubble('❌ QR no registrado', 'error');
+            await logError(scannedValue.substring(0, 8), 'Hash no encontrado');
+            return;
+          }
+        } 
+        else {
+          // 🔄 FORMATO ANTIGUO: cedula|nombre|parroquia|telefono
+          const parts = scannedValue.split('|').map(p => p.trim());
+          if (parts.length < 4) throw new Error('Formato QR inválido');
+          cedula = parts[0].toUpperCase();
         }
-      }
-      
-      if (!cedula) {
-        showBubble('❌ QR no registrado', 'error');
-        await logError(scannedValue.substring(0, 8), 'Hash no encontrado');
-        return;
-      }
-    } 
-    else {
-      // 🔄 FORMATO ANTIGUO: cedula|nombre|parroquia|telefono
-      const parts = scannedValue.split('|').map(p => p.trim());
-      if (parts.length < 4) throw new Error('Formato QR inválido');
-      cedula = parts[0].toUpperCase();
-    }
-    
-    // 👤 Obtener datos del asistente por cédula (usando DB, no db)
-    const attendee = await DB.get(cedula);
-    if (!attendee) {
-      showBubble('❌ Asistente no encontrado', 'error');
-      await logError(cedula, 'No existe en DB');
-      return;
-    }
-    
-    // ✅ Validar estado de escaneo
-    if (attendee.scanned) {
-      const count = (attendee.scannedCount || 1) + 1;
-      await DB.update(cedula, { scannedCount: count, lastScanned: new Date().toISOString() });
-      
-      // Sincronizar con Firebase
-      try {
-        await updateDoc(doc(firestore, "asistentes", cedula), {
-          scannedCount: count,
-          lastScanned: new Date().toISOString()
+        
+        // 👤 Obtener datos del asistente por cédula
+        const attendee = await DB.get(cedula);
+        if (!attendee) {
+          showBubble('❌ Asistente no encontrado', 'error');
+          await logError(cedula, 'No existe en DB');
+          return;
+        }
+        
+        // ✅ Validar estado de escaneo
+        if (attendee.scanned) {
+          const count = (attendee.scannedCount || 1) + 1;
+          await DB.update(cedula, { scannedCount: count, lastScanned: new Date().toISOString() });
+          
+          // Sincronizar con Firebase
+          try {
+            await updateDoc(doc(firestore, "asistentes", cedula), {
+              scannedCount: count,
+              lastScanned: new Date().toISOString()
+            });
+          } catch (e) {
+            console.warn('⚠️ No se pudo sincronizar:', e.message);
+          }
+          
+          showBubble(`⚠️ ${attendee.nombre} ya ingresó (${count}x)`, 'warning');
+          return;
+        }
+        
+        // ✅ PRIMER INGRESO
+        await DB.update(cedula, { 
+          scanned: true, 
+          scannedCount: 1,
+          firstScanned: new Date().toISOString()
         });
-      } catch (e) {
-        console.warn('⚠️ No se pudo sincronizar:', e.message);
+        
+        try {
+          await updateDoc(doc(firestore, "asistentes", cedula), {
+            scanned: true,
+            scannedCount: 1,
+            firstScanned: new Date().toISOString()
+          });
+        } catch (e) {
+          console.warn('⚠️ Sync fallida:', e.message);
+        }
+        
+        showBubble(`✅ Acceso válido • ${attendee.parroquia}`, 'success');
+        updateStats();
+        
+      } catch (err) {
+        console.error('❌ Error procesando QR:', err);
+        showBubble('❌ Error al validar QR', 'error');
+        await logError('unknown', err.message);
       }
-      
-      showBubble(`⚠️ ${attendee.nombre} ya ingresó (${count}x)`, 'warning');
-      return;
-    }
-    
-    // ✅ PRIMER INGRESO
-    await DB.update(cedula, { 
-      scanned: true, 
-      scannedCount: 1,
-      firstScanned: new Date().toISOString()
-    });
-    
-    try {
-      await updateDoc(doc(firestore, "asistentes", cedula), {
-        scanned: true,
-        scannedCount: 1,
-        firstScanned: new Date().toISOString()
-      });
-    } catch (e) {
-      console.warn('⚠️ Sync fallida:', e.message);
-    }
-    
-    showBubble(`✅ Acceso válido • ${attendee.parroquia}`, 'success');
-    updateStats();
-    
-  } catch (err) {
-    console.error('❌ Error procesando QR:', err);
-    showBubble('❌ Error al validar QR', 'error');
-    await logError('unknown', err.message);
-  }
-  }
-
-    async function logError(identifier, message) {
-      const errors = JSON.parse(localStorage.getItem('scan_errors') || '[]');
-      errors.push({ identifier, message, timestamp: new Date().toISOString() });
-      localStorage.setItem('scan_errors', JSON.stringify(errors.slice(-100)));
-      // Opcional: actualizar stats si tienes contador de errores
     }
 
     // ===== LISTA DE ASISTENTES =====
@@ -264,7 +267,7 @@
             <div style="font-weight:700;font-size:1.1rem">${p.nombre}</div>
             <div style="font-size:0.85rem;color:#64748b;margin:4px 0">🆔 ${p.cedula} • 📍 ${p.parroquia}</div>
             <div class="actions" style="justify-content:flex-end">
-              ${!p.qrSent ? `<button class="btn btn-sm wa-btn" onclick="sendQR('${p.cedula}')">📤 Enviar QR</button>` : `<span style="color:#22c55e;font-weight:600">✓ Qr Enviado</span>`}
+              ${!p.qrSent ? `<button class="btn btn-sm wa-btn" onclick="sendQR('${p.cedula}')">📤 Enviar QR</button>` : `<span style="color:#22c55e;font-weight:600">✓ QR Enviado</span>`}
               ${p.scanned ? `<span style="color:#22c55e;font-weight:600;margin-left:10px">✓ Ingresó</span>` : ''}
             </div>
           </div>`).join('');
@@ -394,9 +397,15 @@
       
       initScanner(); updateStats(); setupFormAdd();
       
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js').catch(console.warn);
-      }
+      
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('✅ SW registrado:', reg.scope))
+          .catch(err => console.log('❌ Error SW:', err));
+      });
+    }
+
     }
 
     // Event listeners para modales
@@ -411,59 +420,22 @@
       init(); 
     }
 
-    // ===== DEBUG: Exponer para consola (solo desarrollo) =====
-    if (window.location.hostname === 'localhost' || window.location.hostname.includes('github.io')) {
-      window.__DEBUG__ = {
-        DB: typeof DB !== 'undefined' ? DB : null,
-        processQR: typeof processQR !== 'undefined' ? processQR : null,
-        testHashFormat: (str) => /^[a-f0-9]{64}$/.test(str),
-        testOldFormat: (str) => str.split('|').length >= 4
-      };
-      console.log('🔧 Debug tools ready: usa window.__DEBUG__');
-    }
-
-    // ===== DEBUG: Exponer funciones para consola (solo desarrollo) =====
-    // Esto permite probar desde la consola del navegador
-    if (typeof window !== 'undefined') {
+    // ===== DEBUG: Exponer funciones para consola (SOLO UN BLOQUE) =====
+    if (typeof window !== 'undefined' && 
+        (window.location.hostname === 'localhost' || window.location.hostname.includes('github.io'))) {
+      
       window.__DEBUG__ = {
         // Referencia a la base de datos
         DB: typeof DB !== 'undefined' ? DB : null,
-    
-        // Función para probar formato de hash (64 caracteres hex)
-        testHashFormat: (str) => /^[a-f0-9]{64}$/.test(str?.trim()),
-    
-        // Función para probar formato antiguo (pipe-separated)
-        testOldFormat: (str) => {
-          const parts = str?.split('|').map(p => p.trim());
-          return parts?.length >= 4;
-        },
-    
+        
+        // Funciones de validación de formato
+        isHash: (str) => /^[a-f0-9]{64}$/.test(str?.trim()),
+        isOldFormat: (str) => str?.split('|')?.map(p => p.trim()).length >= 4,
+        
+        // Referencia a processQR
+        processQR: typeof processQR === 'function' ? processQR : null,
+        
         // Función para probar processQR manualmente
-        testProcessQR: async (decodedText) => {
-          try {
-            await processQR(decodedText);
-            console.log('✅ ProcessQR ejecutado');
-          } catch (err) {
-            console.error('❌ ProcessQR error:', err.message);
-          }
-        }
-      };
-      console.log('🔧 Debug tools ready: usa window.__DEBUG__ en consola');
-    }
-
-    // ===== DEBUG GLOBAL: Para pruebas en consola =====
-    if (typeof window !== 'undefined') {
-      window.__DEBUG__ = {
-        // Función para probar formato de hash (64 caracteres hex)
-        testHashFormat: (str) => /^[a-f0-9]{64}$/.test(str?.trim()),
-    
-        // Función para probar formato antiguo (pipe-separated)
-        testOldFormat: (str) => {
-          const parts = str?.split('|')?.map(p => p.trim());
-          return parts?.length >= 4;
-        },
-    
-        // Función para probar processQR directamente
         testProcessQR: async (decodedText) => {
           try {
             if (typeof processQR === 'function') {
@@ -475,28 +447,18 @@
           } catch (err) {
             console.error('❌ ProcessQR error:', err.message);
           }
-        }
+        },
+        
+        // Estado de la app
+        firestoreReady: typeof firestore !== 'undefined'
       };
-      console.log('🔧 Debug tools ready: usa window.__DEBUG__ en consola');
+      
+      console.log('🔧 Debug tools ready. Usa window.__DEBUG__ en consola');
+      console.log('📋 Comandos útiles:');
+      console.log('  - window.__DEBUG__.isHash("abc123...")');
+      console.log('  - window.__DEBUG__.isOldFormat("cedula|nombre|...")');
+      console.log('  - await window.__DEBUG__.testProcessQR("texto-qr")');
     }
-
-    // ===== DEBUG: Exponer funciones para consola =====
-if (typeof window !== 'undefined') {
-  window.__DEBUG__ = {
-    // Funciones de validación de formato
-    isHash: (str) => /^[a-f0-9]{64}$/.test(str?.trim()),
-    isOldFormat: (str) => str?.split('|')?.length >= 4,
-    
-    // Referencia a processQR si existe
-    processQR: typeof processQR === 'function' ? processQR : null,
-    
-    // Estado de la app
-    dbReady: typeof db !== 'undefined' && db !== null,
-    firestoreReady: typeof window.db?.firestore !== 'undefined'
-  };
-  
-  console.log('🔧 Debug tools ready. Usa window.__DEBUG__ en consola');
-}
 
   </script>
 
@@ -610,9 +572,9 @@ if (typeof window !== 'undefined') {
     </div>
   </div>
   <footer>
-    <p>📱 Owner:. <strong>Lcdo. Julio Figueroa</strong></p>
+    <p>📱 Owner: <strong>Lcdo. Julio Figueroa</strong></p>
     <p id="last-sync" style="margin-top:8px;font-size:0.8rem;opacity:0.9"></p>
-    <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻</p>
+    <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻🇪</p>
   </footer>
 </body>
 </html>
