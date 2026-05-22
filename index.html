@@ -152,103 +152,121 @@
 
     // ===== PROCESAR QR ESCANEADO =====
     async function processQR(decodedText) {
+  try {
+    const scannedValue = decodedText.trim();
+    
+    // 🔍 ¿Es un hash seguro? (64 caracteres hexadecimales)
+    const isSecureHash = /^[a-f0-9]{64}$/.test(scannedValue);
+    
+    let cedula = null;
+    
+    if (isSecureHash) {
+      // ✅ Buscar por hash en Firebase (colección hashIndex)
       try {
-        const scannedValue = decodedText.trim();
-        
-        // 🔍 ¿Es un hash seguro? (64 caracteres hexadecimales)
-        const isSecureHash = /^[a-f0-9]{64}$/.test(scannedValue);
-        
-        let cedula = null;
-        
-        if (isSecureHash) {
-          // ✅ Buscar por hash en Firebase (colección hashIndex)
-          try {
-            const hashDoc = await getDoc(doc(firestore, "hashIndex", scannedValue));
-            if (hashDoc.exists()) {
-              cedula = hashDoc.data().cedula;
-            }
-          } catch (e) {
-            console.warn('⚠️ No se pudo consultar hashIndex:', e.message);
-          }
-          
-          // 🔄 Fallback: Buscar en Firestore principal por todos los documentos
-          if (!cedula) {
-            const snapshot = await getDocs(collection(firestore, "asistentes"));
-            for (const d of snapshot.docs) {
-              const data = d.data();
-              if (data.qrHash === scannedValue) {
-                cedula = d.id;
-                break;
-              }
-            }
-          }
-          
-          if (!cedula) {
-            showBubble('❌ QR no registrado', 'error');
-            await logError(scannedValue.substring(0, 8), 'Hash no encontrado');
-            return;
-          }
-        } 
-        else {
-          // 🔄 FORMATO ANTIGUO: cedula|nombre|parroquia|telefono
-          const parts = scannedValue.split('|').map(p => p.trim());
-          if (parts.length < 4) throw new Error('Formato QR inválido');
-          cedula = parts[0].toUpperCase();
+        const hashDoc = await getDoc(doc(firestore, "hashIndex", scannedValue));
+        if (hashDoc.exists()) {
+          cedula = hashDoc.data().cedula;
         }
-        
-        // 👤 Obtener datos del asistente por cédula
-        const attendee = await DB.get(cedula);
-        if (!attendee) {
-          showBubble('❌ Asistente no encontrado', 'error');
-          await logError(cedula, 'No existe en DB');
-          return;
-        }
-        
-        // ✅ Validar estado de escaneo
-        if (attendee.scanned) {
-          const count = (attendee.scannedCount || 1) + 1;
-          await DB.update(cedula, { scannedCount: count, lastScanned: new Date().toISOString() });
-          
-          // Sincronizar con Firebase
-          try {
-            await updateDoc(doc(firestore, "asistentes", cedula), {
-              scannedCount: count,
-              lastScanned: new Date().toISOString()
-            });
-          } catch (e) {
-            console.warn('⚠️ No se pudo sincronizar:', e.message);
+      } catch (e) {
+        console.warn('⚠️ No se pudo consultar hashIndex:', e.message);
+      }
+      
+      // 🔄 Fallback: Buscar en Firestore principal por todos los documentos
+      if (!cedula) {
+        const snapshot = await getDocs(collection(firestore, "asistentes"));
+        for (const d of snapshot.docs) {
+          const data = d.data();
+          if (data.qrHash === scannedValue) {
+            cedula = d.id;
+            break;
           }
-          
-          showBubble(`⚠️ ${attendee.nombre} ya ingresó (${count}x)`, 'warning');
-          return;
         }
-        
-        // ✅ PRIMER INGRESO
-        await DB.update(cedula, { 
-          scanned: true, 
-          scannedCount: 1,
-          firstScanned: new Date().toISOString()
-        });
-        
-        try {
-          await updateDoc(doc(firestore, "asistentes", cedula), {
-            scanned: true,
-            scannedCount: 1,
-            firstScanned: new Date().toISOString()
-          });
-        } catch (e) {
-          console.warn('⚠️ Sync fallida:', e.message);
-        }
-        
-        showBubble(`✅ Acceso válido • ${attendee.parroquia}`, 'success');
-        updateStats();
-        
-      } catch (err) {
-        console.error('❌ Error procesando QR:', err);
-        showBubble('❌ Error al validar QR', 'error');
-        await logError('unknown', err.message);
+      }
+      
+      if (!cedula) {
+        showBubble('❌ QR no registrado', 'error');
+        await logError(scannedValue.substring(0, 8), 'Hash no encontrado');
+        return;
+      }
+    } 
+    else {
+      // 🔄 FORMATO ANTIGUO: cedula|nombre|parroquia|telefono
+      // Limpiar y normalizar el texto escaneado
+      const cleaned = scannedValue.replace(/[\r\n\t]+/g, '|').trim();
+      const parts = cleaned.split('|').map(p => p.trim()).filter(p => p.length > 0);
+      
+      if (parts.length < 4) {
+        console.error('❌ Formato QR inválido. Partes encontradas:', parts.length, 'Valor:', scannedValue);
+        showBubble('❌ QR con formato incorrecto', 'error');
+        await logError('invalid_format', `Partes: ${parts.length}, Valor: ${scannedValue.substring(0, 50)}`);
+        return;
+      }
+      
+      // Normalizar cédula: remover "V-", "v-", espacios, convertir a mayúsculas
+      cedula = parts[0].toUpperCase().replace(/^V-?/, '').trim();
+      
+      // Validar que la cédula tenga 6-8 dígitos numéricos
+      if (!/^[0-9]{6,8}$/.test(cedula)) {
+        console.error('❌ Cédula inválida en QR:', cedula);
+        showBubble('❌ Cédula en QR inválida', 'error');
+        await logError('invalid_cedula', `Cédula: ${cedula}`);
+        return;
       }
     }
+    
+    // 👤 Obtener datos del asistente por cédula
+    const attendee = await DB.get(cedula);
+    if (!attendee) {
+      showBubble('❌ Asistente no encontrado', 'error');
+      await logError(cedula, 'No existe en DB');
+      return;
+    }
+    
+    // ✅ Validar estado de escaneo
+    if (attendee.scanned) {
+      const count = (attendee.scannedCount || 1) + 1;
+      await DB.update(cedula, { scannedCount: count, lastScanned: new Date().toISOString() });
+      
+      // Sincronizar con Firebase
+      try {
+        await updateDoc(doc(firestore, "asistentes", cedula), {
+          scannedCount: count,
+          lastScanned: new Date().toISOString()
+        });
+      } catch (e) {
+        console.warn('⚠️ No se pudo sincronizar:', e.message);
+      }
+      
+      showBubble(`⚠️ ${attendee.nombre} ya ingresó (${count}x)`, 'warning');
+      return;
+    }
+    
+    // ✅ PRIMER INGRESO
+    await DB.update(cedula, { 
+      scanned: true, 
+      scannedCount: 1,
+      firstScanned: new Date().toISOString()
+    });
+    
+    try {
+      await updateDoc(doc(firestore, "asistentes", cedula), {
+        scanned: true,
+        scannedCount: 1,
+        firstScanned: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('⚠️ Sync fallida:', e.message);
+    }
+    
+    showBubble(`✅ Acceso válido • ${attendee.parroquia}`, 'success');
+    updateStats();
+    
+  } catch (err) {
+    console.error('❌ Error procesando QR:', err);
+    showBubble('❌ Error al validar QR', 'error');
+    await logError('unknown', err.message);
+  }
+}
 
     // ===== LISTA DE ASISTENTES =====
     async function renderAttendeesList() {
