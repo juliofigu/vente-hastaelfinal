@@ -59,6 +59,7 @@
     const DB = {
       async add(data) {
         const qrHash = await generateSecureHash(data.cedula, new Date().toISOString());
+        
         await setDoc(doc(firestore, "asistentes", data.cedula), {
           ...data,
           scanned: false, 
@@ -134,40 +135,24 @@
     };
     window.closeModal = (id) => { const el = document.getElementById(id); if (el) el.classList.remove('active'); };
 
-    // ===== LOG DE ERRORES =====
-    async function logError(identifier, message) {
-      try {
-        const errors = JSON.parse(localStorage.getItem('scan_errors') || '[]');
-        errors.push({ identifier, message, timestamp: new Date().toISOString() });
-        localStorage.setItem('scan_errors', JSON.stringify(errors.slice(-100)));
-      } catch (e) {
-        console.warn('⚠️ No se pudo guardar el error:', e.message);
-      }
-    }
-
     // ===== VIBRACIÓN Y AUDIO FEEDBACK =====
     function triggerFeedback(type) {
-      // Vibración: [vibrar, pausa, vibrar] para éxito; vibración larga para error
       if ('vibrate' in navigator) {
         if (type === 'success') {
-          navigator.vibrate([200, 100, 200]); // ✅ Doble vibración corta
+          navigator.vibrate([200, 100, 200]);
         } else if (type === 'warning') {
-          navigator.vibrate([400]); // ⚠️ Vibración media
+          navigator.vibrate([400]);
         } else if (type === 'error') {
-          navigator.vibrate([500, 200, 500]); // ❌ Vibración larga con pausa
+          navigator.vibrate([500, 200, 500]);
         }
       }
-      // Opcional: sonido breve (descomentar si se desea)
-      // if (type === 'success') { new Audio('data:audio/wav;base64,...').play().catch(()=>{}); }
     }
 
     // ===== MODAL DE RESULTADO DE ESCANEO =====
     function showScanResultModal(persona, status, message, onReady) {
-      // Eliminar modal existente si hay
       const existing = document.getElementById('modal-scan-result');
       if (existing) existing.remove();
 
-      // Definir colores e iconos según estado
       const config = {
         success: { icon: '✅', color: '#22c55e', bg: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)', text: 'AUTORIZADO' },
         warning: { icon: '⚠️', color: '#f59e0b', bg: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', text: 'YA INGRESÓ' },
@@ -176,7 +161,7 @@
 
       const html = `
         <div id="modal-scan-result" class="modal active" style="z-index:9999; background: rgba(0,0,0,0.9);">
-          <div class="modal-content" style="text-align:center; max-width:400px; border: 3px solid ${config.color};">
+          <div class="modal-content" style="text-align:center; max-width:400px; border: 3px solid ${config.color}; animation: popIn 0.3s ease-out;">
             <div style="background: ${config.bg}; color: white; padding: 20px; border-radius: 16px 16px 0 0; margin: -25px -25px 20px -25px;">
               <div style="font-size: 3rem; margin-bottom: 10px;">${config.icon}</div>
               <div style="font-size: 1.3rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">${config.text}</div>
@@ -208,18 +193,27 @@
       
       document.body.insertAdjacentHTML('beforeend', html);
       
-      // Configurar botón de continuar
       document.getElementById('btn-ready-next').addEventListener('click', () => {
         document.getElementById('modal-scan-result')?.remove();
         if (typeof onReady === 'function') onReady();
       });
       
-      // Prevenir cierre accidental
       document.getElementById('modal-scan-result').addEventListener('click', (e) => {
         if (e.target !== document.getElementById('modal-scan-result')) return;
         e.preventDefault();
         e.stopPropagation();
       });
+    }
+
+    // ===== LOG DE ERRORES =====
+    async function logError(identifier, message) {
+      try {
+        const errors = JSON.parse(localStorage.getItem('scan_errors') || '[]');
+        errors.push({ identifier, message, timestamp: new Date().toISOString() });
+        localStorage.setItem('scan_errors', JSON.stringify(errors.slice(-100)));
+      } catch (e) {
+        console.warn('⚠️ No se pudo guardar el error:', e.message);
+      }
     }
 
     // ===== QR SCANNER =====
@@ -240,12 +234,10 @@
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 280, height: 280 } },
         async (decodedText) => {
-          // Ignorar si el scanner está pausado
           if (isScannerPaused) return;
           
           try { 
-            await processQR(decodedText); 
-            // NO reiniciar automáticamente - esperar confirmación manual
+            await processQR(decodedText);
           } catch (e) { 
             console.error('Error QR:', e); 
           }
@@ -257,7 +249,6 @@
     // ===== PROCESAR QR ESCANEADO =====
     async function processQR(decodedText) {
       try {
-        // Pausar scanner para evitar lecturas múltiples
         isScannerPaused = true;
         if (html5QrCode && typeof html5QrCode.pause === 'function') {
           html5QrCode.pause();
@@ -315,7 +306,6 @@
           return;
         }
         
-        // ✅ Validar estado de escaneo
         if (attendee.scanned) {
           const count = (attendee.scannedCount || 1) + 1;
           await DB.update(cedula, { scannedCount: count, lastScanned: new Date().toISOString() });
@@ -335,7 +325,6 @@
           return;
         }
         
-        // ✅ PRIMER INGRESO - AUTORIZADO
         await DB.update(cedula, { 
           scanned: true, 
           scannedCount: 1,
@@ -522,7 +511,6 @@
       }
     }
 
-    // Event listeners para modales
     document.querySelectorAll('.modal').forEach(m => 
       m.addEventListener('click', e => { if(e.target === m) closeModal(m.id); })
     );
@@ -533,9 +521,9 @@
       init(); 
     }
 
-    // ===== DEBUG =====
     if (typeof window !== 'undefined' && 
         (window.location.hostname === 'localhost' || window.location.hostname.includes('github.io'))) {
+      
       window.__DEBUG__ = {
         DB: typeof DB !== 'undefined' ? DB : null,
         isHash: (str) => /^[a-f0-9]{64}$/.test(str?.trim()),
@@ -555,24 +543,76 @@
         },
         firestoreReady: typeof firestore !== 'undefined'
       };
+      
       console.log('🔧 Debug tools ready. Usa window.__DEBUG__ en consola');
     }
   </script>
 
-  <!-- Librería para generar QR -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <style>
-    /* ... [MANTENER ESTILOS EXISTENTES] ... */
-    /* Agregar estilo específico para modal de resultado */
-    #modal-scan-result .modal-content {
-      animation: popIn 0.3s ease-out;
-    }
-    @keyframes popIn {
-      from { transform: scale(0.9); opacity: 0; }
-      to { transform: scale(1); opacity: 1; }
-    }
-    /* ... [RESTO DE ESTILOS SIN CAMBIOS] ... */
+    :root { --success: #22c55e; --warning: #f59e0b; --error: #ef4444; --primary: #1e40af; --secondary: #fbbf24; --accent: #dc2626; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; position: relative; overflow-x: hidden; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #e2e8f0; }
+    .bg-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at 50% 50%, rgba(30, 58, 138, 0.4) 0%, rgba(15, 23, 42, 0.8) 100%); z-index: -1; pointer-events: none; }
+    header { text-align: center; padding: 20px 15px; background: linear-gradient(135deg, rgba(30, 64, 175, 0.95) 0%, rgba(59, 130, 246, 0.9) 100%); color: white; border-radius: 16px; margin: 15px auto; max-width: 450px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4), 0 0 20px rgba(59, 130, 246, 0.3); backdrop-filter: blur(10px); border: 2px solid rgba(255,255,255,0.1); position: relative; z-index: 10; }
+    header::before { content: '⭐'; position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-size: 1.5rem; animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); } 50% { opacity: 0.7; transform: translateX(-50%) scale(1.1); } }
+    header h1 { font-size: 1.4rem; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.3); margin-bottom: 5px; }
+    header .subtitle { font-size: 0.85rem; opacity: 0.95; font-weight: 500; }
+    header .brand { display: inline-block; margin-top: 8px; padding: 4px 12px; background: rgba(255,255,255,0.2); border-radius: 20px; font-size: 0.75rem; font-weight: 600; letter-spacing: 1px; border: 1px solid rgba(255,255,255,0.3); }
+    #reader { width: 100%; max-width: 450px; margin: 0 auto 15px; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5), 0 0 30px rgba(59, 130, 246, 0.3); background: #000; position: relative; z-index: 10; border: 3px solid rgba(255,255,255,0.2); }
+    #reader video { width: 100%; display: block; }
+    .bubble { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 16px 32px; border-radius: 50px; color: white; font-weight: 700; font-size: 1.05rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5), 0 10px 10px -5px rgba(0,0,0,0.3); z-index: 9999; display: none; animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), fade 0.4s 2.6s ease; max-width: 90%; text-align: center; backdrop-filter: blur(10px); border: 2px solid rgba(255,255,255,0.3); }
+    .bubble.success { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); }
+    .bubble.warning { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #1f2937; }
+    .bubble.error { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+    .bubble.info { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
+    @keyframes pop { from { transform: translate(-50%, -40px) scale(0.8); opacity: 0; } to { transform: translate(-50%, 0) scale(1); opacity: 1; } }
+    @keyframes fade { to { opacity: 0; transform: translate(-50%, -15px) scale(0.95); } }
+    @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; max-width: 450px; margin: 0 auto 15px; position: relative; z-index: 10; }
+    .stat-card { background: rgba(255, 255, 255, 0.98); padding: 15px; border-radius: 16px; text-align: center; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); backdrop-filter: blur(10px); border: 2px solid rgba(255,255,255,0.5); transition: transform 0.2s; }
+    .stat-card:hover { transform: translateY(-3px); }
+    .stat-card .value { font-size: 1.8rem; font-weight: 800; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat-card .label { font-size: 0.85rem; color: #64748b; margin-top: 4px; font-weight: 500; }
+    .actions { max-width: 450px; margin: 0 auto 20px; display: flex; gap: 10px; flex-wrap: wrap; position: relative; z-index: 10; }
+    .btn { flex: 1; min-width: 120px; padding: 14px 18px; border: none; border-radius: 12px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; backdrop-filter: blur(5px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); }
+    .btn-primary { background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; border: 2px solid rgba(255,255,255,0.2); }
+    .btn-outline { background: rgba(255,255,255,0.95); color: #1e40af; border: 2px solid #1e40af; }
+    .btn-success { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; border: 2px solid rgba(255,255,255,0.2); }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
+    .btn:active { transform: scale(0.96); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+    .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; backdrop-filter: blur(5px); }
+    .modal.active { display: flex; }
+    .modal-content { background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); border-radius: 20px; padding: 25px; max-width: 450px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.2); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e2e8f0; }
+    .modal-title { font-weight: 800; font-size: 1.3rem; color: #1e293b; }
+    .modal-close { background: #f1f5f9; border: none; font-size: 1.8rem; cursor: pointer; color: #64748b; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .modal-close:hover { background: #e2e8f0; color: #1e293b; transform: rotate(90deg); }
+    .form-group { margin-bottom: 18px; }
+    .form-group label { display: block; margin-bottom: 8px; font-weight: 600; font-size: 0.95rem; color: #334155; }
+    .form-group input, .form-group select { width: 100%; padding: 14px; border: 2px solid #e2e8f0; border-radius: 12px; font-size: 1rem; transition: all 0.2s; background: white; }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
+    .form-group small { display: block; margin-top: 6px; color: #64748b; font-size: 0.85rem; }
+    .attendee-card { background: white; padding: 18px; border-radius: 16px; margin-bottom: 12px; border-left: 5px solid #3b82f6; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); transition: all 0.2s; }
+    .attendee-card:hover { transform: translateX(5px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.15); }
+    .attendee-card.scanned { border-left-color: #22c55e; background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%); }
+    .attendee-card .name { font-weight: 700; font-size: 1.15rem; margin-bottom: 6px; color: #1e293b; }
+    .attendee-card .meta { font-size: 0.9rem; color: #64748b; margin-bottom: 3px; }
+    .attendee-card .actions { margin-top: 12px; justify-content: flex-end; }
+    .btn-sm { padding: 10px 18px; font-size: 0.85rem; min-width: auto; }
+    .wa-btn { background: linear-gradient(135deg, #25D366 0%, #128C7E 100%); color: white; border: none; padding: 12px 24px; border-radius: 50px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; font-size: 0.95rem; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(37, 211, 102, 0.3); transition: all 0.3s; }
+    .wa-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(37, 211, 102, 0.4); }
+    footer { text-align: center; padding: 25px 15px; color: rgba(255,255,255,0.9); font-size: 0.85rem; max-width: 450px; margin: 0 auto; position: relative; z-index: 10; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+    footer strong { color: #fbbf24; font-weight: 700; }
+    .loading { text-align: center; padding: 50px 20px; color: white; background: rgba(255,255,255,0.1); border-radius: 16px; backdrop-filter: blur(10px); }
+    .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.3); border-top-color: #fbbf24; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 480px) { header h1 { font-size: 1.2rem; } .stat-card .value { font-size: 1.5rem; } .btn { font-size: 0.85rem; padding: 12px 14px; } }
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+    header, #reader, .stats-grid, .actions { animation: fadeInUp 0.6s ease-out; }
   </style>
 </head>
 <body>
@@ -595,8 +635,6 @@
     <button class="btn btn-outline" onclick="openModal('modal-add')">➕ Agregar</button>
     <button class="btn btn-primary" onclick="exportReport()">📊 Exportar</button>
   </div>
-  
-  <!-- Modales existentes (lista, agregar) -->
   <div id="modal-list" class="modal">
     <div class="modal-content">
       <div class="modal-header"><span class="modal-title">📋 Asistentes Registrados</span><button class="modal-close" onclick="closeModal('modal-list')">&times;</button></div>
@@ -620,11 +658,10 @@
       </form>
     </div>
   </div>
-  
   <footer>
     <p>📱 Owner: <strong>Lcdo. Julio Figueroa</strong></p>
     <p id="last-sync" style="margin-top:8px;font-size:0.8rem;opacity:0.9"></p>
-    <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻🇪</p>
+    <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻</p>
   </footer>
 </body>
 </html>
