@@ -72,10 +72,17 @@
           errors: all.filter(a => a.error).length
         };
       },
-      generateQRContent(p) {
-        return '{cedula}|{nombre}|{parroquia}|{telefono}'
-          .replace('{cedula}', p.cedula).replace('{nombre}', p.nombre)
-          .replace('{parroquia}', p.parroquia).replace('{telefono}', p.telefono);
+      generateQRContent(person) {
+        // Si tiene hash seguro, usarlo; si no, generar formato antiguo (fallback)
+        if (person.qrHash && /^[a-f0-9]{64}$/.test(person.qrHash)) {
+          return person.qrHash;
+        }
+        // Fallback para registros antiguos sin hash
+        return CONFIG.qrFormat
+          .replace('{cedula}', person.cedula)
+          .replace('{nombre}', person.nombre)
+          .replace('{parroquia}', person.parroquia)
+          .replace('{telefono}', person.telefono);
       }
     };
 
@@ -133,65 +140,71 @@
  */
 async function processQR(decodedText) {
   try {
-    const scannedHash = decodedText.trim();
+    const scannedValue = decodedText.trim();
     
-    // ✅ VALIDAR formato del hash (SHA-256 = 64 caracteres hex)
-    if (!/^[a-f0-9]{64}$/.test(scannedHash)) {
-      showBubble('❌ Código QR inválido o corrupto', 'error');
-      await logError('invalid_hash', `Formato incorrecto: ${scannedHash.substring(0, 16)}...`);
-      return;
-    }
+    // 🔍 PASO 1: ¿Es un hash seguro? (64 caracteres hexadecimales)
+    const isSecureHash = /^[a-f0-9]{64}$/.test(scannedValue);
     
     let cedula = null;
     
-    // 🔍 BUSCAR en Firebase Firestore usando índice hashIndex
-    if (window.db?.firestore) {
-      const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-      
-      const hashDoc = await getDoc(doc(window.db.firestore, "hashIndex", scannedHash));
-      if (hashDoc.exists()) {
-        cedula = hashDoc.data().cedula;
+    if (isSecureHash) {
+      // ✅ Buscar por hash en Firebase (colección hashIndex)
+      if (window.db?.firestore) {
+        try {
+          const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+          const hashDoc = await getDoc(doc(window.db.firestore, "hashIndex", scannedValue));
+          if (hashDoc.exists()) {
+            cedula = hashDoc.data().cedula;
+          }
+        } catch (e) {
+          console.warn('⚠️ No se pudo consultar hashIndex en Firebase:', e.message);
+        }
       }
+      
+      // 🔄 Fallback: Buscar en IndexedDB local
+      if (!cedula && db) {
+        const allAttendees = await db.getAll();
+        const match = allAttendees.find(a => a.qrHash === scannedValue);
+        if (match) cedula = match.cedula;
+      }
+      
+      if (!cedula) {
+        showBubble('❌ QR no registrado en el sistema', 'error');
+        await logError(scannedValue.substring(0, 8) + '...', 'Hash no encontrado');
+        return;
+      }
+    } 
+    else {
+      // 🔄 FORMATO ANTIGUO: cedula|nombre|parroquia|telefono
+      const parts = scannedValue.split('|').map(p => p.trim());
+      if (parts.length < 4) throw new Error('Formato QR inválido');
+      cedula = parts[0].toUpperCase();
     }
     
-    // 🔄 FALLBACK: Buscar en IndexedDB local (modo offline)
-    if (!cedula && db) {
-      const allAttendees = await db.getAll();
-      const match = allAttendees.find(a => a.qrHash === scannedHash);
-      if (match) cedula = match.cedula;
-    }
-    
-    // ❌ HASH NO ENCONTRADO
-    if (!cedula) {
-      showBubble('❌ QR no registrado en el sistema', 'error');
-      await logError(scannedHash.substring(0, 8) + '...', 'Hash no encontrado en ninguna BD');
-      return;
-    }
-    
-    // 👤 OBTENER datos del asistente
+    // 👤 Obtener datos del asistente por cédula
     const attendee = await db.get(cedula);
     if (!attendee) {
       showBubble('❌ Asistente no encontrado', 'error');
-      await logError(cedula, 'Asistente existe en índice pero no en DB principal');
+      await logError(cedula, 'Asistente no existe en DB principal');
       return;
     }
     
-    // ✅ VALIDAR estado de escaneo
+    // ✅ Validar estado de escaneo
     if (attendee.scanned) {
       const count = (attendee.scannedCount || 1) + 1;
+      await db.update(cedula, { scannedCount: count, lastScanned: new Date().toISOString() });
       
-      await db.update(cedula, { 
-        scannedCount: count,
-        lastScanned: new Date().toISOString()
-      });
-      
-      // Sincronizar con Firebase
+      // Sincronizar con Firebase si está disponible
       if (window.db?.firestore) {
-        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-        await updateDoc(doc(window.db.firestore, "asistentes", cedula), {
-          scannedCount: count,
-          lastScanned: new Date().toISOString()
-        });
+        try {
+          const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+          await updateDoc(doc(window.db.firestore, "asistentes", cedula), {
+            scannedCount: count,
+            lastScanned: new Date().toISOString()
+          });
+        } catch (e) {
+          console.warn('⚠️ No se pudo sincronizar con Firebase:', e.message);
+        }
       }
       
       showBubble(`⚠️ ${attendee.nombre} ya ingresó (${count} veces)`, 'warning');
@@ -207,20 +220,24 @@ async function processQR(decodedText) {
     
     // Sincronizar con Firebase
     if (window.db?.firestore) {
-      const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-      await updateDoc(doc(window.db.firestore, "asistentes", cedula), {
-        scanned: true,
-        scannedCount: 1,
-        firstScanned: new Date().toISOString()
-      });
+      try {
+        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+        await updateDoc(doc(window.db.firestore, "asistentes", cedula), {
+          scanned: true,
+          scannedCount: 1,
+          firstScanned: new Date().toISOString()
+        });
+      } catch (e) {
+        console.warn('⚠️ No se pudo sincronizar con Firebase:', e.message);
+      }
     }
     
-    // ✅ CONFIRMACIÓN (sin exponer datos sensibles)
+    // ✅ CONFIRMACIÓN
     showBubble(`✅ Acceso válido • ${attendee.parroquia}`, 'success');
     updateStats();
     
   } catch (err) {
-    console.error('Error procesando QR:', err);
+    console.error('❌ Error procesando QR:', err);
     showBubble('❌ Error al validar QR', 'error');
     await logError('unknown', err.message);
   }
