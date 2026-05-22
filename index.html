@@ -551,19 +551,37 @@ Hola *${person.nombre}*,
     window.exportReport = exportReport;
 
     // ===== INICIALIZAR =====
-    async function init() {
-      try {
-        const snapshot = await getDocs(collection(firestore, "asistentes"));
-        console.log('🔥 Firebase conectado. Documentos:', snapshot.size);
-        showBubble(`🔥 Firebase OK: ${snapshot.size} registros`, 'info', 5000);
-      } catch (e) { console.error('❌ Error Firebase:', e.message); showBubble('⚠️ Modo offline', 'warning', 5000); }
-      
-      initScanner(); updateStats(); setupFormAdd();
-      
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js').catch(console.warn);
-      }
+    // ===== INICIALIZAR =====
+async function init() {
+  // Verificar conexión Firebase con manejo de errores robusto
+  try {
+    // Intentar leer un documento de prueba (más ligero que toda la colección)
+    const testDoc = await getDoc(doc(firestore, "asistentes", "00000001"));
+    // Si llega aquí, tiene permisos de lectura
+    console.log('🔥 Firebase conectado. Permisos OK');
+    showBubble('🔥 Firebase OK', 'info', 3000);
+  } catch (e) {
+    // Manejar errores específicos de permisos vs conexión
+    if (e.code === 'permission-denied' || e.message.includes('permissions')) {
+      console.warn('⚠️ Firebase: Permisos de lectura restringidos (pero la app puede funcionar)');
+      showBubble('⚠️ Modo consulta limitada', 'warning', 4000);
+    } else if (e.code === 'unavailable' || e.message.includes('offline')) {
+      console.error('❌ Firebase: Sin conexión a internet');
+      showBubble('⚠️ Modo offline', 'warning', 5000);
+    } else {
+      console.error('❌ Error Firebase:', e.message);
+      showBubble('⚠️ Error de conexión', 'warning', 4000);
     }
+  }
+  
+  initScanner(); 
+  updateStats(); 
+  setupFormAdd();
+  
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(console.warn);
+  }
+}
 
     document.querySelectorAll('.modal').forEach(m => 
       m.addEventListener('click', e => { if(e.target === m) closeModal(m.id); })
