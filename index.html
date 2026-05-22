@@ -422,6 +422,35 @@
       console.log('🔧 Debug tools ready: usa window.__DEBUG__');
     }
 
+    // ===== DEBUG: Exponer funciones para consola (solo desarrollo) =====
+    // Esto permite probar desde la consola del navegador
+    if (typeof window !== 'undefined') {
+      window.__DEBUG__ = {
+        // Referencia a la base de datos
+        DB: typeof DB !== 'undefined' ? DB : null,
+    
+        // Función para probar formato de hash (64 caracteres hex)
+        testHashFormat: (str) => /^[a-f0-9]{64}$/.test(str?.trim()),
+    
+        // Función para probar formato antiguo (pipe-separated)
+        testOldFormat: (str) => {
+          const parts = str?.split('|').map(p => p.trim());
+          return parts?.length >= 4;
+        },
+    
+        // Función para probar processQR manualmente
+        testProcessQR: async (decodedText) => {
+          try {
+            await processQR(decodedText);
+            console.log('✅ ProcessQR ejecutado');
+          } catch (err) {
+            console.error('❌ ProcessQR error:', err.message);
+          }
+        }
+      };
+      console.log('🔧 Debug tools ready: usa window.__DEBUG__ en consola');
+    }
+
   </script>
 
   <!-- Librería para generar QR (después del módulo para asegurar carga) -->
