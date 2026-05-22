@@ -39,15 +39,35 @@
     
     // ===== CONFIGURACIÓN =====
     const CONFIG = {
-      qrFormat: '{cedula}|{nombre}|{parroquia}|{telefono}'
+      qrFormat: '{cedula}|{nombre}|{parroquia}|{telefono}',
+      hashSalt: 'VENTE_CABIMAS_2024_SECURE_SALT_'
     };
+
+    // ===== GENERAR HASH SEGURO (DETERMINISTA) =====
+    async function generateSecureHash(cedula, timestamp) {
+      const seed = timestamp || cedula;
+      const data = `${cedula}|${seed}|${CONFIG.hashSalt}`;
+      const encoder = new TextEncoder();
+      const dataBuffer = encoder.encode(data);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+      return Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
 
     // ===== BASE DE DATOS (Firestore) =====
     const DB = {
       async add(data) {
+        // ✅ Generar hash seguro para el QR
+        const qrHash = await generateSecureHash(data.cedula, new Date().toISOString());
+        
         await setDoc(doc(firestore, "asistentes", data.cedula), {
           ...data,
-          scanned: false, scannedCount: 0, qrSent: false, error: false,
+          scanned: false, 
+          scannedCount: 0, 
+          qrSent: false, 
+          error: false,
+          qrHash: qrHash,  // ✅ Guardar hash en Firebase
           timestamp: new Date().toISOString(),
           whatsapp: `https://wa.me/58${String(data.telefono).replace(/^0+/, '')}`
         });
@@ -415,15 +435,9 @@
       
       initScanner(); updateStats(); setupFormAdd();
       
-      
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-          .then(reg => console.log('✅ SW registrado:', reg.scope))
-          .catch(err => console.log('❌ Error SW:', err));
-      });
-    }
-
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js').catch(console.warn);
+      }
     }
 
     // Event listeners para modales
