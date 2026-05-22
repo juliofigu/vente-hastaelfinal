@@ -38,6 +38,11 @@
     const app = initializeApp(firebaseConfig);
     const firestore = getFirestore(app);
     
+    // ===== CONFIGURACIÓN =====
+    const CONFIG = {
+      qrFormat: '{cedula}|{nombre}|{parroquia}|{telefono}'
+    };
+
     // ===== BASE DE DATOS (Firestore) =====
     const DB = {
       async add(data) {
@@ -135,42 +140,42 @@
       ).catch(err => showBubble('⚠️ Permiso de cámara requerido', 'error'));
     }
 
-    /**
- * Procesa un QR escaneado que contiene SOLO un hash seguro
- */
-async function processQR(decodedText) {
+    /*** Procesa un QR escaneado que contiene SOLO un hash seguro */
+  async function processQR(decodedText) {
   try {
     const scannedValue = decodedText.trim();
     
-    // 🔍 PASO 1: ¿Es un hash seguro? (64 caracteres hexadecimales)
+    // 🔍 ¿Es un hash seguro? (64 caracteres hexadecimales)
     const isSecureHash = /^[a-f0-9]{64}$/.test(scannedValue);
     
     let cedula = null;
     
     if (isSecureHash) {
       // ✅ Buscar por hash en Firebase (colección hashIndex)
-      if (window.db?.firestore) {
-        try {
-          const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-          const hashDoc = await getDoc(doc(window.db.firestore, "hashIndex", scannedValue));
-          if (hashDoc.exists()) {
-            cedula = hashDoc.data().cedula;
+      try {
+        const hashDoc = await getDoc(doc(firestore, "hashIndex", scannedValue));
+        if (hashDoc.exists()) {
+          cedula = hashDoc.data().cedula;
+        }
+      } catch (e) {
+        console.warn('⚠️ No se pudo consultar hashIndex:', e.message);
+      }
+      
+      // 🔄 Fallback: Buscar en Firestore principal por todos los documentos
+      if (!cedula) {
+        const snapshot = await getDocs(collection(firestore, "asistentes"));
+        for (const d of snapshot.docs) {
+          const data = d.data();
+          if (data.qrHash === scannedValue) {
+            cedula = d.id;
+            break;
           }
-        } catch (e) {
-          console.warn('⚠️ No se pudo consultar hashIndex en Firebase:', e.message);
         }
       }
       
-      // 🔄 Fallback: Buscar en IndexedDB local
-      if (!cedula && db) {
-        const allAttendees = await db.getAll();
-        const match = allAttendees.find(a => a.qrHash === scannedValue);
-        if (match) cedula = match.cedula;
-      }
-      
       if (!cedula) {
-        showBubble('❌ QR no registrado en el sistema', 'error');
-        await logError(scannedValue.substring(0, 8) + '...', 'Hash no encontrado');
+        showBubble('❌ QR no registrado', 'error');
+        await logError(scannedValue.substring(0, 8), 'Hash no encontrado');
         return;
       }
     } 
@@ -181,58 +186,50 @@ async function processQR(decodedText) {
       cedula = parts[0].toUpperCase();
     }
     
-    // 👤 Obtener datos del asistente por cédula
-    const attendee = await db.get(cedula);
+    // 👤 Obtener datos del asistente por cédula (usando DB, no db)
+    const attendee = await DB.get(cedula);
     if (!attendee) {
       showBubble('❌ Asistente no encontrado', 'error');
-      await logError(cedula, 'Asistente no existe en DB principal');
+      await logError(cedula, 'No existe en DB');
       return;
     }
     
     // ✅ Validar estado de escaneo
     if (attendee.scanned) {
       const count = (attendee.scannedCount || 1) + 1;
-      await db.update(cedula, { scannedCount: count, lastScanned: new Date().toISOString() });
+      await DB.update(cedula, { scannedCount: count, lastScanned: new Date().toISOString() });
       
-      // Sincronizar con Firebase si está disponible
-      if (window.db?.firestore) {
-        try {
-          const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-          await updateDoc(doc(window.db.firestore, "asistentes", cedula), {
-            scannedCount: count,
-            lastScanned: new Date().toISOString()
-          });
-        } catch (e) {
-          console.warn('⚠️ No se pudo sincronizar con Firebase:', e.message);
-        }
+      // Sincronizar con Firebase
+      try {
+        await updateDoc(doc(firestore, "asistentes", cedula), {
+          scannedCount: count,
+          lastScanned: new Date().toISOString()
+        });
+      } catch (e) {
+        console.warn('⚠️ No se pudo sincronizar:', e.message);
       }
       
-      showBubble(`⚠️ ${attendee.nombre} ya ingresó (${count} veces)`, 'warning');
+      showBubble(`⚠️ ${attendee.nombre} ya ingresó (${count}x)`, 'warning');
       return;
     }
     
-    // ✅ PRIMER INGRESO: Marcar como escaneado
-    await db.update(cedula, { 
+    // ✅ PRIMER INGRESO
+    await DB.update(cedula, { 
       scanned: true, 
       scannedCount: 1,
       firstScanned: new Date().toISOString()
     });
     
-    // Sincronizar con Firebase
-    if (window.db?.firestore) {
-      try {
-        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-        await updateDoc(doc(window.db.firestore, "asistentes", cedula), {
-          scanned: true,
-          scannedCount: 1,
-          firstScanned: new Date().toISOString()
-        });
-      } catch (e) {
-        console.warn('⚠️ No se pudo sincronizar con Firebase:', e.message);
-      }
+    try {
+      await updateDoc(doc(firestore, "asistentes", cedula), {
+        scanned: true,
+        scannedCount: 1,
+        firstScanned: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('⚠️ Sync fallida:', e.message);
     }
     
-    // ✅ CONFIRMACIÓN
     showBubble(`✅ Acceso válido • ${attendee.parroquia}`, 'success');
     updateStats();
     
@@ -241,7 +238,14 @@ async function processQR(decodedText) {
     showBubble('❌ Error al validar QR', 'error');
     await logError('unknown', err.message);
   }
-}
+  }
+
+    async function logError(identifier, message) {
+      const errors = JSON.parse(localStorage.getItem('scan_errors') || '[]');
+      errors.push({ identifier, message, timestamp: new Date().toISOString() });
+      localStorage.setItem('scan_errors', JSON.stringify(errors.slice(-100)));
+      // Opcional: actualizar stats si tienes contador de errores
+    }
 
     // ===== LISTA DE ASISTENTES =====
     async function renderAttendeesList() {
