@@ -56,21 +56,31 @@
     }
 
     // ===== BASE DE DATOS (Firestore) =====
-    const DB = {
-      async add(data) {
-        const qrHash = await generateSecureHash(data.cedula, new Date().toISOString());
-        
-        await setDoc(doc(firestore, "asistentes", data.cedula), {
-          ...data,
-          scanned: false, 
-          scannedCount: 0, 
-          qrSent: false, 
-          error: false,
-          qrHash: qrHash,
-          timestamp: new Date().toISOString(),
-          whatsapp: `https://wa.me/58${String(data.telefono).replace(/^0+/, '')}`
-        });
-      },
+   const DB = {
+  async add(data) {
+    // ✅ Generar hash seguro para el QR (si no existe)
+    const qrHash = data.qrHash || await generateSecureHash(data.cedula, new Date().toISOString());
+    
+    // ✅ Asegurar formato de teléfono (solo dígitos, sin "+" ni espacios)
+    const telefonoLimpio = String(data.telefono).replace(/\D/g, '');
+    
+    // ✅ Crear objeto con campos exactos que validan las reglas
+    const asistenteData = {
+      nombre: String(data.nombre).trim(),
+      parroquia: String(data.parroquia).trim(),
+      telefono: telefonoLimpio,
+      timestamp: new Date().toISOString(),  // ✅ String ISO (compatible con reglas)
+      scanned: false,
+      scannedCount: 0,
+      qrSent: false,
+      error: false,
+      qrHash: qrHash,  // ✅ Siempre incluir hash
+      whatsapp: `https://wa.me/58${telefonoLimpio}`
+    };
+    
+    // ✅ Guardar en Firestore
+    await setDoc(doc(firestore, "asistentes", data.cedula), asistenteData);
+  },
       async get(cedula) {
         const snap = await getDoc(doc(firestore, "asistentes", cedula));
         return snap.exists() ? snap.data() : null;
@@ -454,6 +464,18 @@
               const fallbackMsg = `Si WhatsApp no se abrió, copia y pega este enlace en tu navegador:\n\n${whatsappLink}`;
               alert(fallbackMsg);
             } else {
+
+// Dentro de setupFormAdd(), antes de await DB.add(data):
+console.log('📤 Datos a enviar a Firebase:', {
+  cedula: data.cedula,
+  nombre: data.nombre,
+  parroquia: data.parroquia,
+  telefono: data.telefono,
+  telefonoLimpio: data.telefono.replace(/\D/g, ''),
+  timestamp: new Date().toISOString(),
+  tieneQrHash: !!data.qrHash
+});
+
              // Éxito: marcar como enviado
              await DB.update(data.cedula, { qrSent: true });
              showBubble('📤 Instrucciones enviadas por WhatsApp', 'success');
