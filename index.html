@@ -56,31 +56,26 @@
     }
 
     // ===== BASE DE DATOS (Firestore) =====
-   const DB = {
-  async add(data) {
-    // ✅ Generar hash seguro para el QR (si no existe)
-    const qrHash = data.qrHash || await generateSecureHash(data.cedula, new Date().toISOString());
-    
-    // ✅ Asegurar formato de teléfono (solo dígitos, sin "+" ni espacios)
-    const telefonoLimpio = String(data.telefono).replace(/\D/g, '');
-    
-    // ✅ Crear objeto con campos exactos que validan las reglas
-    const asistenteData = {
-      nombre: String(data.nombre).trim(),
-      parroquia: String(data.parroquia).trim(),
-      telefono: telefonoLimpio,
-      timestamp: new Date().toISOString(),  // ✅ String ISO (compatible con reglas)
-      scanned: false,
-      scannedCount: 0,
-      qrSent: false,
-      error: false,
-      qrHash: qrHash,  // ✅ Siempre incluir hash
-      whatsapp: `https://wa.me/58${telefonoLimpio}`
-    };
-    
-    // ✅ Guardar en Firestore
-    await setDoc(doc(firestore, "asistentes", data.cedula), asistenteData);
-  },
+    const DB = {
+      async add(data) {
+        const qrHash = data.qrHash || await generateSecureHash(data.cedula, new Date().toISOString());
+        const telefonoLimpio = String(data.telefono).replace(/\D/g, '');
+        
+        const asistenteData = {
+          nombre: String(data.nombre).trim(),
+          parroquia: String(data.parroquia).trim(),
+          telefono: telefonoLimpio,
+          timestamp: new Date().toISOString(),
+          scanned: false,
+          scannedCount: 0,
+          qrSent: false,
+          error: false,
+          qrHash: qrHash,
+          whatsapp: `https://wa.me/58${telefonoLimpio}`
+        };
+        
+        await setDoc(doc(firestore, "asistentes", data.cedula), asistenteData);
+      },
       async get(cedula) {
         const snap = await getDoc(doc(firestore, "asistentes", cedula));
         return snap.exists() ? snap.data() : null;
@@ -141,9 +136,21 @@
     
     window.openModal = (id) => {
       const el = document.getElementById(id);
-      if (el) { el.classList.add('active'); if (id === 'modal-list') renderAttendeesList(); }
+      if (el) { 
+        el.classList.add('active'); 
+        if (id === 'modal-list') {
+          // Pausar scanner al abrir lista
+          if (isScannerActive) {
+            toggleScanner(false);
+          }
+          renderAttendeesList();
+        }
+      }
     };
-    window.closeModal = (id) => { const el = document.getElementById(id); if (el) el.classList.remove('active'); };
+    window.closeModal = (id) => { 
+      const el = document.getElementById(id); 
+      if (el) el.classList.remove('active'); 
+    };
 
     // ===== VIBRACIÓN Y AUDIO FEEDBACK =====
     function triggerFeedback(type) {
@@ -226,8 +233,9 @@
       }
     }
 
-    // ===== QR SCANNER =====
+    // ===== QR SCANNER CON CONTROL MANUAL =====
     let html5QrCode = null;
+    let isScannerActive = false;
     let isScannerPaused = false;
     
     function initScanner() {
@@ -236,24 +244,78 @@
         showBubble('⚠️ Librería QR no disponible', 'warning');
         return;
       }
+      
       const reader = document.getElementById('reader');
       if (!reader) return;
       
       html5QrCode = new Html5Qrcode('reader');
-      html5QrCode.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 280, height: 280 } },
-        async (decodedText) => {
-          if (isScannerPaused) return;
-          
-          try { 
-            await processQR(decodedText);
-          } catch (e) { 
-            console.error('Error QR:', e); 
+      // NO iniciar automáticamente - esperar al botón
+    }
+
+    // ===== TOGGLE SCANNER (ACTIVAR/DESACTIVAR) =====
+    async function toggleScanner(forceState = null) {
+      const shouldActivate = forceState !== null ? forceState : !isScannerActive;
+      const btn = document.getElementById('btn-toggle-scanner');
+      
+      if (!btn) return;
+      
+      if (shouldActivate) {
+        // Activar scanner
+        try {
+          if (!html5QrCode) {
+            initScanner();
           }
-        },
-        (errorMessage) => {}
-      ).catch(err => showBubble('⚠️ Permiso de cámara requerido', 'error'));
+          
+          await html5QrCode.start(
+            { facingMode: 'environment' },
+            { fps: 10, qrbox: { width: 280, height: 280 } },
+            async (decodedText) => {
+              if (isScannerPaused) return;
+              
+              try { 
+                await processQR(decodedText);
+              } catch (e) { 
+                console.error('Error QR:', e); 
+              }
+            },
+            (errorMessage) => {}
+          );
+          
+          isScannerActive = true;
+          btn.innerHTML = '📷 DESACTIVAR SCANNER';
+          btn.classList.remove('btn-success');
+          btn.classList.add('btn-outline');
+          btn.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+          btn.style.color = 'white';
+          showBubble('📷 Scanner activado', 'success', 2000);
+          
+        } catch (err) {
+          console.error('Error activando scanner:', err);
+          showBubble('⚠️ Permiso de cámara requerido', 'error');
+          isScannerActive = false;
+        }
+      } else {
+        // Desactivar scanner
+        try {
+          if (html5QrCode && isScannerActive) {
+            await html5QrCode.stop();
+          }
+          
+          isScannerActive = false;
+          isScannerPaused = false;
+          btn.innerHTML = '📷 ACTIVAR SCANNER';
+          btn.classList.remove('btn-outline');
+          btn.classList.add('btn-success');
+          btn.style.background = '';
+          btn.style.color = '';
+          showBubble('📷 Scanner desactivado', 'info', 2000);
+          
+        } catch (err) {
+          console.error('Error desactivando scanner:', err);
+        }
+      }
+      
+      updateStats();
     }
 
     // ===== PROCESAR QR ESCANEADO =====
@@ -366,7 +428,7 @@
     // ===== REANUDAR SCANNER DESPUÉS DE CONFIRMACIÓN =====
     function resumeScanner() {
       isScannerPaused = false;
-      if (html5QrCode && typeof html5QrCode.resume === 'function') {
+      if (html5QrCode && isScannerActive && typeof html5QrCode.resume === 'function') {
         html5QrCode.resume().catch(err => console.warn('⚠️ No se pudo reanudar scanner:', err));
       }
     }
@@ -385,7 +447,7 @@
         }
         container.innerHTML = attendees.map(p => `
           <div class="attendee-card ${p.scanned ? 'scanned' : ''}">
-            <div style="font-weight:700;font-size:1.1rem">${p.nombre}</div>
+            <div style="font-weight:700;font-size:1.1rem;color:#0f172a;margin-bottom:6px">${p.nombre}</div>
             <div style="font-size:0.85rem;color:#64748b;margin:4px 0">🆔 ${p.cedula} • 📍 ${p.parroquia}</div>
             <div class="actions" style="justify-content:flex-end">
               ${!p.qrSent ? `<button class="btn btn-sm wa-btn" onclick="sendQR('${p.cedula}')">📤 Enviar QR</button>` : `<span style="color:#22c55e;font-weight:600">✓ QR Enviado</span>`}
@@ -395,7 +457,6 @@
       } catch (err) { container.innerHTML = `<p style="padding:20px;color:#ef4444">Error: ${err.message}</p>`; }
     }
 
-    // ===== AGREGAR ASISTENTE =====
     // ===== AGREGAR ASISTENTE =====
     function setupFormAdd() {
       const form = document.getElementById('form-add');
@@ -419,66 +480,46 @@
           await DB.add(data); 
           showBubble('✅ Registrado en Firebase', 'success');
       
-          // ✅ Usar el MISMO formato que sendQR() con enlace a miQR
           const qrDownloadLink = 'https://juliofigu.github.io/miQR';
           const message = encodeURIComponent(
     `🎟️ *TU CÓDIGO DE ACCESO - EVENTO 04 DE JUNIO*
 
-    Hola *${data.nombre}*, 
+Hola *${data.nombre}*, 
 
-    ✅ Tu registro ha sido confirmado exitosamente.
+✅ Tu registro ha sido confirmado exitosamente.
 
-    🔐 *PARA OBTENER TU CÓDIGO QR:*
+🔐 *PARA OBTENER TU CÓDIGO QR:*
 
-    *${qrDownloadLink}*
+*${qrDownloadLink}*
 
-    📍 *INSTRUCCIONES:*
-    1️⃣ Haz clic en el enlace de arriba
-    2️⃣ Ingresa tu cédula: *${data.cedula}*
-    3️⃣ Descarga o captura tu código QR
-    4️⃣ Muéstralo en la entrada del evento
+📍 *INSTRUCCIONES:*
+1️⃣ Haz clic en el enlace de arriba
+2️⃣ Ingresa tu cédula: *${data.cedula}*
+3️⃣ Descarga o captura tu código QR
+4️⃣ Muéstralo en la entrada del evento
 
-    ⚠️ *IMPORTANTE:*
-    • Este código es personal e intransferible
-    • Guárdalo en tu galería para acceso rápido
-    • No lo compartas con terceros
+⚠️ *IMPORTANTE:*
+• Este código es personal e intransferible
+• Guárdalo en tu galería para acceso rápido
+• No lo compartas con terceros
 
-    🇻🇪 *VENTE CABIMAS* • 14 Años por la Libertad`
+🇻🇪 *VENTE CABIMAS* • 14 Años por la Libertad`
           );
       
           const whatsappNumber = data.telefono.replace(/^0+/, '');
           const whatsappLink = `https://wa.me/58${whatsappNumber}?text=${message}`;
       
-          // ✅ Confirmación mejorada con detección de bloqueadores
           if (confirm(`📤 ¿Enviar instrucciones por WhatsApp a ${data.nombre}?\n\n📱 +58 ${whatsappNumber}`)) {
-            // Intentar abrir WhatsApp
             const newWindow = window.open(whatsappLink, '_blank');
         
-            // Verificar si fue bloqueado
             if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-             // Fallback: copiar enlace al portapapeles y mostrar instrucción
-             navigator.clipboard?.writeText(whatsappLink).catch(() => {});
-             showBubble('⚠️ Pop-up bloqueado. Enlace copiado al portapapeles.', 'warning');
-          
-              // Mostrar mensaje alternativo
+              navigator.clipboard?.writeText(whatsappLink).catch(() => {});
+              showBubble('⚠️ Pop-up bloqueado. Enlace copiado al portapapeles.', 'warning');
               const fallbackMsg = `Si WhatsApp no se abrió, copia y pega este enlace en tu navegador:\n\n${whatsappLink}`;
               alert(fallbackMsg);
             } else {
-
-// Dentro de setupFormAdd(), antes de await DB.add(data):
-console.log('📤 Datos a enviar a Firebase:', {
-  cedula: data.cedula,
-  nombre: data.nombre,
-  parroquia: data.parroquia,
-  telefono: data.telefono,
-  telefonoLimpio: data.telefono.replace(/\D/g, ''),
-  timestamp: new Date().toISOString(),
-  tieneQrHash: !!data.qrHash
-});
-
-             // Éxito: marcar como enviado
-             await DB.update(data.cedula, { qrSent: true });
-             showBubble('📤 Instrucciones enviadas por WhatsApp', 'success');
+              await DB.update(data.cedula, { qrSent: true });
+              showBubble('📤 Instrucciones enviadas por WhatsApp', 'success');
             }
          }
       
@@ -488,8 +529,8 @@ console.log('📤 Datos a enviar a Firebase:', {
           renderAttendeesList();
       
         } catch (err) { 
-         console.error('Error registrando asistente:', err);
-         showBubble('❌ Error: ' + err.message, 'error'); 
+          console.error('Error registrando asistente:', err);
+          showBubble('❌ Error: ' + err.message, 'error'); 
         }
       });
     }
@@ -500,10 +541,8 @@ console.log('📤 Datos a enviar a Firebase:', {
         const person = await DB.get(cedula);
         if (!person) throw new Error('Asistente no encontrado');
         
-        // ✅ Enlace oficial para descargar QR
         const qrDownloadLink = 'https://juliofigu.github.io/miQR';
         
-        // ✅ Mensaje formateado para WhatsApp (negrita con *, saltos con \n)
         const message = encodeURIComponent(
 `🎟️ *TU CÓDIGO DE ACCESO - EVENTO 04 DE JUNIO*
 
@@ -529,13 +568,10 @@ Hola *${person.nombre}*,
 🇻🇪 *VENTE CABIMAS* • 14 Años por la Libertad`
         );
         
-        // ✅ Construir enlace de WhatsApp
         const whatsappNumber = person.telefono.replace(/^0+/, '');
         const whatsappLink = `https://wa.me/58${whatsappNumber}?text=${message}`;
         
-        // ✅ Mostrar confirmación al operador
         if (confirm(`📤 ¿Enviar instrucciones por WhatsApp a ${person.nombre}?\n\n📱 ${whatsappNumber}`)) {
-          // Abrir WhatsApp en nueva pestaña
           const newWindow = window.open(whatsappLink, '_blank');
           
           if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
@@ -543,7 +579,6 @@ Hola *${person.nombre}*,
             return;
           }
           
-          // Marcar como enviado en la base de datos
           await DB.update(cedula, { qrSent: true });
           showBubble('📤 Instrucciones enviadas por WhatsApp', 'success');
           renderAttendeesList();
@@ -573,37 +608,32 @@ Hola *${person.nombre}*,
     window.exportReport = exportReport;
 
     // ===== INICIALIZAR =====
-    // ===== INICIALIZAR =====
-async function init() {
-  // Verificar conexión Firebase con manejo de errores robusto
-  try {
-    // Intentar leer un documento de prueba (más ligero que toda la colección)
-    const testDoc = await getDoc(doc(firestore, "asistentes", "00000001"));
-    // Si llega aquí, tiene permisos de lectura
-    console.log('🔥 Firebase conectado. Permisos OK');
-    showBubble('🔥 Firebase OK', 'info', 3000);
-  } catch (e) {
-    // Manejar errores específicos de permisos vs conexión
-    if (e.code === 'permission-denied' || e.message.includes('permissions')) {
-      console.warn('⚠️ Firebase: Permisos de lectura restringidos (pero la app puede funcionar)');
-      showBubble('⚠️ Modo consulta limitada', 'warning', 4000);
-    } else if (e.code === 'unavailable' || e.message.includes('offline')) {
-      console.error('❌ Firebase: Sin conexión a internet');
-      showBubble('⚠️ Modo offline', 'warning', 5000);
-    } else {
-      console.error('❌ Error Firebase:', e.message);
-      showBubble('⚠️ Error de conexión', 'warning', 4000);
+    async function init() {
+      try {
+        const testDoc = await getDoc(doc(firestore, "asistentes", "00000001"));
+        console.log('🔥 Firebase conectado. Permisos OK');
+        showBubble('🔥 Firebase OK', 'info', 3000);
+      } catch (e) {
+        if (e.code === 'permission-denied' || e.message.includes('permissions')) {
+          console.warn('⚠️ Firebase: Permisos de lectura restringidos');
+          showBubble('⚠️ Modo consulta limitada', 'warning', 4000);
+        } else if (e.code === 'unavailable' || e.message.includes('offline')) {
+          console.error('❌ Firebase: Sin conexión a internet');
+          showBubble('⚠️ Modo offline', 'warning', 5000);
+        } else {
+          console.error('❌ Error Firebase:', e.message);
+          showBubble('⚠️ Error de conexión', 'warning', 4000);
+        }
+      }
+      
+      initScanner(); 
+      updateStats(); 
+      setupFormAdd();
+      
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js').catch(console.warn);
+      }
     }
-  }
-  
-  initScanner(); 
-  updateStats(); 
-  setupFormAdd();
-  
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(console.warn);
-  }
-}
 
     document.querySelectorAll('.modal').forEach(m => 
       m.addEventListener('click', e => { if(e.target === m) closeModal(m.id); })
@@ -624,6 +654,8 @@ async function init() {
         isHash: (str) => /^[a-f0-9]{64}$/.test(str?.trim()),
         isOldFormat: (str) => str?.split('|')?.map(p => p.trim()).length >= 4,
         processQR: typeof processQR === 'function' ? processQR : null,
+        toggleScanner: typeof toggleScanner === 'function' ? toggleScanner : null,
+        isScannerActive: () => isScannerActive,
         testProcessQR: async (decodedText) => {
           try {
             if (typeof processQR === 'function') {
@@ -641,6 +673,9 @@ async function init() {
       
       console.log('🔧 Debug tools ready. Usa window.__DEBUG__ en consola');
     }
+    
+    // Exponer toggleScanner globalmente
+    window.toggleScanner = toggleScanner;
   </script>
 
   <!-- Librería para generar QR -->
@@ -672,6 +707,51 @@ async function init() {
     .stat-card:hover { transform: translateY(-3px); }
     .stat-card .value { font-size: 1.8rem; font-weight: 800; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
     .stat-card .label { font-size: 0.85rem; color: #64748b; margin-top: 4px; font-weight: 500; }
+    
+    /* Botón toggle scanner - GRANDE Y CENTRADO */
+    .scanner-toggle-container {
+      max-width: 450px;
+      margin: 0 auto 15px;
+      position: relative;
+      z-index: 10;
+    }
+    .btn-toggle-scanner {
+      width: 100%;
+      padding: 20px 24px;
+      font-size: 1.3rem;
+      font-weight: 800;
+      border: none;
+      border-radius: 16px;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      color: white;
+      box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      animation: pulseButton 2s ease-in-out infinite;
+    }
+    @keyframes pulseButton {
+      0%, 100% { transform: scale(1); box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3); }
+      50% { transform: scale(1.02); box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4); }
+    }
+    .btn-toggle-scanner:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4);
+    }
+    .btn-toggle-scanner:active {
+      transform: scale(0.98);
+    }
+    .btn-toggle-scanner.active {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.4), 0 0 20px rgba(239, 68, 68, 0.3);
+      animation: none;
+    }
+    
     .actions { max-width: 450px; margin: 0 auto 20px; display: flex; gap: 10px; flex-wrap: wrap; position: relative; z-index: 10; }
     .btn { flex: 1; min-width: 120px; padding: 14px 18px; border: none; border-radius: 12px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; backdrop-filter: blur(5px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); }
     .btn-primary { background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; border: 2px solid rgba(255,255,255,0.2); }
@@ -706,9 +786,9 @@ async function init() {
     .loading { text-align: center; padding: 50px 20px; color: white; background: rgba(255,255,255,0.1); border-radius: 16px; backdrop-filter: blur(10px); }
     .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.3); border-top-color: #fbbf24; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    @media (max-width: 480px) { header h1 { font-size: 1.2rem; } .stat-card .value { font-size: 1.5rem; } .btn { font-size: 0.85rem; padding: 12px 14px; } }
+    @media (max-width: 480px) { header h1 { font-size: 1.2rem; } .stat-card .value { font-size: 1.5rem; } .btn { font-size: 0.85rem; padding: 12px 14px; } .btn-toggle-scanner { font-size: 1.1rem; padding: 18px 20px; } }
     @keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-    header, #reader, .stats-grid, .actions { animation: fadeInUp 0.6s ease-out; }
+    header, #reader, .scanner-toggle-container, .stats-grid, .actions { animation: fadeInUp 0.6s ease-out; }
   </style>
 </head>
 <body>
@@ -719,7 +799,17 @@ async function init() {
     <div class="subtitle">Evento 04 de Junio • Escanea QR para validar</div>
     <div class="brand">⭐ VENTE CABIMAS ⭐</div>
   </header>
+  
+  <!-- Contenedor del scanner (cámara siempre visible pero inactiva) -->
   <div id="reader"></div>
+  
+  <!-- Botón grande para activar/desactivar scanner -->
+  <div class="scanner-toggle-container">
+    <button id="btn-toggle-scanner" class="btn btn-success" onclick="toggleScanner()">
+      📷 ACTIVAR SCANNER
+    </button>
+  </div>
+  
   <div class="stats-grid">
     <div class="stat-card"><div class="value" id="count-scanned">0</div><div class="label">✅ Ingresaron</div></div>
     <div class="stat-card"><div class="value" id="count-total">0</div><div class="label">📋 Registrados</div></div>
@@ -755,9 +845,9 @@ async function init() {
     </div>
   </div>
   <footer>
-    <p>📱 Owner:. <strong>Lcdo. Julio Figueroa</strong></p>
+    <p>📱 Creador: <strong>Lcdo. Julio Figueroa</strong></p>
     <p id="last-sync" style="margin-top:8px;font-size:0.8rem;opacity:0.9"></p>
-    <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻🇪</p>
+    <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻</p>
   </footer>
 </body>
 </html>
