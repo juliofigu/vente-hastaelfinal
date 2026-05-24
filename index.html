@@ -710,11 +710,12 @@ Hola *${person.nombre}*,
     
     /* Botón toggle scanner - GRANDE Y CENTRADO */
     .scanner-toggle-container {
-      max-width: 450px;
-      margin: 0 auto 15px;
-      position: relative;
-      z-index: 10;
-    }
+  width: calc(100% - 30px);  /* Ancho total menos padding */
+  max-width: 450px;
+  margin: 0 auto 15px;
+  padding: 0 15px;
+  box-sizing: border-box;
+}
     .btn-toggle-scanner {
       width: 100%;
       padding: 20px 24px;
@@ -724,7 +725,8 @@ Hola *${person.nombre}*,
       border-radius: 16px;
       cursor: pointer;
       transition: all 0.3s;
-      display: flex;
+      display: block;
+      margin: 0 auto;
       align-items: center;
       justify-content: center;
       gap: 12px;
