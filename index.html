@@ -256,11 +256,12 @@
     async function toggleScanner(forceState = null) {
       const shouldActivate = forceState !== null ? forceState : !isScannerActive;
       const btn = document.getElementById('btn-toggle-scanner');
+      const btnContainer = document.querySelector('.scanner-toggle-container');
       
       if (!btn) return;
       
       if (shouldActivate) {
-        // Activar scanner
+        // ✅ ACTIVAR SCANNER
         try {
           if (!html5QrCode) {
             initScanner();
@@ -282,20 +283,21 @@
           );
           
           isScannerActive = true;
-          btn.innerHTML = '📷 DESACTIVAR SCANNER';
-          btn.classList.remove('btn-success');
-          btn.classList.add('btn-outline');
-          btn.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
-          btn.style.color = 'white';
+          
+          // ✅ OCULTAR botón al activar
+          if (btnContainer) btnContainer.style.display = 'none';
+          
           showBubble('📷 Scanner activado', 'success', 2000);
           
         } catch (err) {
           console.error('Error activando scanner:', err);
           showBubble('⚠️ Permiso de cámara requerido', 'error');
           isScannerActive = false;
+          // Mostrar botón si falló la activación
+          if (btnContainer) btnContainer.style.display = 'block';
         }
       } else {
-        // Desactivar scanner
+        // ❌ DESACTIVAR SCANNER (solo llamado internamente)
         try {
           if (html5QrCode && isScannerActive) {
             await html5QrCode.stop();
@@ -303,11 +305,17 @@
           
           isScannerActive = false;
           isScannerPaused = false;
-          btn.innerHTML = '📷 ACTIVAR SCANNER';
-          btn.classList.remove('btn-outline');
-          btn.classList.add('btn-success');
-          btn.style.background = '';
-          btn.style.color = '';
+          
+          // ✅ MOSTRAR botón al desactivar
+          if (btnContainer) {
+            btnContainer.style.display = 'block';
+            btn.innerHTML = '📷 ACTIVAR SCANNER';
+            btn.classList.remove('btn-outline');
+            btn.classList.add('btn-success');
+            btn.style.background = '';
+            btn.style.color = '';
+          }
+          
           showBubble('📷 Scanner desactivado', 'info', 2000);
           
         } catch (err) {
@@ -316,6 +324,39 @@
       }
       
       updateStats();
+    }
+
+    // ===== DESACTIVAR SCANNER AL USAR OTROS BOTONES =====
+    function setupAutoDisableScanner() {
+      // Seleccionar todos los botones que deben desactivar el scanner
+      const buttonsToDisable = [
+        document.querySelector('.actions .btn-outline'), // Lista
+        document.querySelectorAll('.actions .btn-outline')[1], // Agregar
+        document.querySelector('.actions .btn-primary') // Exportar
+      ].filter(btn => btn); // Filtrar nulls
+      
+      buttonsToDisable.forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (isScannerActive) {
+            // Desactivar scanner silenciosamente
+            if (html5QrCode) {
+              html5QrCode.stop().catch(() => {});
+            }
+            isScannerActive = false;
+            isScannerPaused = false;
+            
+            // Mostrar botón de activación
+            const btnContainer = document.querySelector('.scanner-toggle-container');
+            const toggleBtn = document.getElementById('btn-toggle-scanner');
+            if (btnContainer) btnContainer.style.display = 'block';
+            if (toggleBtn) {
+              toggleBtn.innerHTML = '📷 ACTIVAR SCANNER';
+              toggleBtn.classList.remove('btn-outline');
+              toggleBtn.classList.add('btn-success');
+            }
+          }
+        });
+      });
     }
 
     // ===== PROCESAR QR ESCANEADO =====
@@ -428,9 +469,12 @@
     // ===== REANUDAR SCANNER DESPUÉS DE CONFIRMACIÓN =====
     function resumeScanner() {
       isScannerPaused = false;
+      
+      // ✅ Si el scanner está activo, reanudar SIN mostrar botón
       if (html5QrCode && isScannerActive && typeof html5QrCode.resume === 'function') {
         html5QrCode.resume().catch(err => console.warn('⚠️ No se pudo reanudar scanner:', err));
       }
+      // ✅ Si no está activo, no hacer nada (el botón ya está visible)
     }
 
     // ===== LISTA DE ASISTENTES =====
@@ -629,6 +673,7 @@ Hola *${person.nombre}*,
       initScanner(); 
       updateStats(); 
       setupFormAdd();
+      setupAutoDisableScanner(); // ✅ NUEVO: Configurar desactivación automática
       
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js').catch(console.warn);
@@ -708,86 +753,90 @@ Hola *${person.nombre}*,
     .stat-card .value { font-size: 1.8rem; font-weight: 800; background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
     .stat-card .label { font-size: 0.85rem; color: #64748b; margin-top: 4px; font-weight: 500; }
     
-    /* Botón toggle scanner - GRANDE Y CENTRADO */
-    /* Botón toggle scanner - CENTRADO Y ANCHO COMPLETO */
-/* ===== BOTÓN TOGGLE SCANNER - FORZADO ===== */
-.scanner-toggle-container {
-  width: 100% !important;
-  max-width: 450px !important;
-  margin: 0 auto 15px auto !important;
-  padding: 0 15px !important;
-  box-sizing: border-box !important;
-  position: relative !important;
-  z-index: 10 !important;
-  display: block !important;
-  text-align: center !important;
-}
-
-.btn-toggle-scanner {
-  width: 100% !important;
-  max-width: 100% !important;
-  padding: 20px 24px !important;
-  font-size: 1.2rem !important;
-  font-weight: 700 !important;
-  border: none !important;
-  border-radius: 16px !important;
-  cursor: pointer !important;
-  transition: all 0.3s !important;
-  display: block !important;
-  margin: 0 auto !important;
-  text-align: center !important;
-  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
-  color: white !important;
-  box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3) !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.5px !important;
-  animation: pulseButton 2s ease-in-out infinite !important;
-}
-
-/* Eliminar cualquier estilo que pueda estar interfiriendo */
-#btn-toggle-scanner,
-button#btn-toggle-scanner,
-.btn#btn-toggle-scanner,
-.btn-success#btn-toggle-scanner {
-  width: 100% !important;
-  margin: 0 auto !important;
-  display: block !important;
-}
-
-/* Asegurar que no haya float o position que lo mueva */
-.scanner-toggle-container,
-.scanner-toggle-container *,
-.btn-toggle-scanner,
-.btn-toggle-scanner * {
-  float: none !important;
-  position: static !important;
-}
-
-@keyframes pulseButton {
-  0%, 100% { 
-    transform: scale(1) !important;
-    box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3) !important;
-  }
-  50% { 
-    transform: scale(1.02) !important;
-    box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4) !important;
-  }
-}
-
-.btn-toggle-scanner:hover {
-  transform: translateY(-2px) !important;
-  box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4) !important;
-}
-
-.btn-toggle-scanner:active {
-  transform: scale(0.98) !important;
-}
-
-.btn-toggle-scanner.active {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
-  box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.4), 0 0 20px rgba(239, 68, 68, 0.3) !important;
-  animation: none !important;
-}
+    /* ===== BOTÓN TOGGLE SCANNER - FORZADO ===== */
+    .scanner-toggle-container {
+      width: 100% !important;
+      max-width: 450px !important;
+      margin: 0 auto 15px auto !important;
+      padding: 0 15px !important;
+      box-sizing: border-box !important;
+      position: relative !important;
+      z-index: 10 !important;
+      display: block !important;
+      text-align: center !important;
+      transition: opacity 0.3s ease;
+    }
+    
+    .scanner-toggle-container[style*="display: none"] {
+      opacity: 0;
+      pointer-events: none;
+    }
+    
+    .btn-toggle-scanner {
+      width: 100% !important;
+      max-width: 100% !important;
+      padding: 20px 24px !important;
+      font-size: 1.2rem !important;
+      font-weight: 700 !important;
+      border: none !important;
+      border-radius: 16px !important;
+      cursor: pointer !important;
+      transition: all 0.3s !important;
+      display: block !important;
+      margin: 0 auto !important;
+      text-align: center !important;
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+      color: white !important;
+      box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3) !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.5px !important;
+      animation: pulseButton 2s ease-in-out infinite !important;
+    }
+    
+    /* Eliminar cualquier estilo que pueda estar interfiriendo */
+    #btn-toggle-scanner,
+    button#btn-toggle-scanner,
+    .btn#btn-toggle-scanner,
+    .btn-success#btn-toggle-scanner {
+      width: 100% !important;
+      margin: 0 auto !important;
+      display: block !important;
+    }
+    
+    /* Asegurar que no haya float o position que lo mueva */
+    .scanner-toggle-container,
+    .scanner-toggle-container *,
+    .btn-toggle-scanner,
+    .btn-toggle-scanner * {
+      float: none !important;
+      position: static !important;
+    }
+    
+    @keyframes pulseButton {
+      0%, 100% { 
+        transform: scale(1) !important;
+        box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3) !important;
+      }
+      50% { 
+        transform: scale(1.02) !important;
+        box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4) !important;
+      }
+    }
+    
+    .btn-toggle-scanner:hover {
+      transform: translateY(-2px) !important;
+      box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4) !important;
+    }
+    
+    .btn-toggle-scanner:active {
+      transform: scale(0.98) !important;
+    }
+    
+    .btn-toggle-scanner.active {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+      box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.4), 0 0 20px rgba(239, 68, 68, 0.3) !important;
+      animation: none !important;
+    }
     
     .actions { max-width: 450px; margin: 0 auto 20px; display: flex; gap: 10px; flex-wrap: wrap; position: relative; z-index: 10; }
     .btn { flex: 1; min-width: 120px; padding: 14px 18px; border: none; border-radius: 12px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; backdrop-filter: blur(5px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); }
@@ -884,7 +933,7 @@ button#btn-toggle-scanner,
   <footer>
     <p>📱 Creador: <strong>Lcdo. Julio Figueroa</strong></p>
     <p id="last-sync" style="margin-top:8px;font-size:0.8rem;opacity:0.9"></p>
-    <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻</p>
+    <p style="margin-top:10px;font-size:0.75rem;opacity:0.7"><strong>VENTE CABIMAS</strong> • 14 Años por la Libertad 🇻🇪</p>
   </footer>
 </body>
 </html>
