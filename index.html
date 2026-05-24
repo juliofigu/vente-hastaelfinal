@@ -709,50 +709,61 @@ Hola *${person.nombre}*,
     .stat-card .label { font-size: 0.85rem; color: #64748b; margin-top: 4px; font-weight: 500; }
     
     /* Botón toggle scanner - GRANDE Y CENTRADO */
-    .scanner-toggle-container {
-  width: calc(100% - 30px);  /* Ancho total menos padding */
+    /* Botón toggle scanner - CENTRADO Y ANCHO COMPLETO */
+.scanner-toggle-container {
+  width: 100%;
   max-width: 450px;
   margin: 0 auto 15px;
   padding: 0 15px;
   box-sizing: border-box;
+  position: relative;
+  z-index: 10;
 }
-    .btn-toggle-scanner {
-      width: 100%;
-      padding: 20px 24px;
-      font-size: 1.3rem;
-      font-weight: 800;
-      border: none;
-      border-radius: 16px;
-      cursor: pointer;
-      transition: all 0.3s;
-      display: block;
-      margin: 0 auto;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-      color: white;
-      box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      animation: pulseButton 2s ease-in-out infinite;
-    }
-    @keyframes pulseButton {
-      0%, 100% { transform: scale(1); box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3); }
-      50% { transform: scale(1.02); box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4); }
-    }
-    .btn-toggle-scanner:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4);
-    }
-    .btn-toggle-scanner:active {
-      transform: scale(0.98);
-    }
-    .btn-toggle-scanner.active {
-      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-      box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.4), 0 0 20px rgba(239, 68, 68, 0.3);
-      animation: none;
-    }
+
+.btn-toggle-scanner {
+  width: 100%;
+  padding: 20px 24px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: block;  /* ✅ Importante para que ocupe todo el ancho */
+  margin: 0 auto;  /* ✅ Centrar horizontalmente */
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: white;
+  box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  animation: pulseButton 2s ease-in-out infinite;
+}
+
+@keyframes pulseButton {
+  0%, 100% { 
+    transform: scale(1); 
+    box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3); 
+  }
+  50% { 
+    transform: scale(1.02); 
+    box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4); 
+  }
+}
+
+.btn-toggle-scanner:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4);
+}
+
+.btn-toggle-scanner:active {
+  transform: scale(0.98);
+}
+
+.btn-toggle-scanner.active {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.4), 0 0 20px rgba(239, 68, 68, 0.3);
+  animation: none;
+}
     
     .actions { max-width: 450px; margin: 0 auto 20px; display: flex; gap: 10px; flex-wrap: wrap; position: relative; z-index: 10; }
     .btn { flex: 1; min-width: 120px; padding: 14px 18px; border: none; border-radius: 12px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; backdrop-filter: blur(5px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); }
