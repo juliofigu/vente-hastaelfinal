@@ -710,59 +710,83 @@ Hola *${person.nombre}*,
     
     /* Botón toggle scanner - GRANDE Y CENTRADO */
     /* Botón toggle scanner - CENTRADO Y ANCHO COMPLETO */
+/* ===== BOTÓN TOGGLE SCANNER - FORZADO ===== */
 .scanner-toggle-container {
-  width: 100%;
-  max-width: 450px;
-  margin: 0 auto 15px;
-  padding: 0 15px;
-  box-sizing: border-box;
-  position: relative;
-  z-index: 10;
+  width: 100% !important;
+  max-width: 450px !important;
+  margin: 0 auto 15px auto !important;
+  padding: 0 15px !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  z-index: 10 !important;
+  display: block !important;
+  text-align: center !important;
 }
 
 .btn-toggle-scanner {
-  width: 100%;
-  padding: 20px 24px;
-  font-size: 1.2rem;
-  font-weight: 700;
-  border: none;
-  border-radius: 16px;
-  cursor: pointer;
-  transition: all 0.3s;
-  display: block;  /* ✅ Importante para que ocupe todo el ancho */
-  margin: 0 auto;  /* ✅ Centrar horizontalmente */
-  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-  color: white;
-  box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  animation: pulseButton 2s ease-in-out infinite;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 20px 24px !important;
+  font-size: 1.2rem !important;
+  font-weight: 700 !important;
+  border: none !important;
+  border-radius: 16px !important;
+  cursor: pointer !important;
+  transition: all 0.3s !important;
+  display: block !important;
+  margin: 0 auto !important;
+  text-align: center !important;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+  color: white !important;
+  box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  animation: pulseButton 2s ease-in-out infinite !important;
+}
+
+/* Eliminar cualquier estilo que pueda estar interfiriendo */
+#btn-toggle-scanner,
+button#btn-toggle-scanner,
+.btn#btn-toggle-scanner,
+.btn-success#btn-toggle-scanner {
+  width: 100% !important;
+  margin: 0 auto !important;
+  display: block !important;
+}
+
+/* Asegurar que no haya float o position que lo mueva */
+.scanner-toggle-container,
+.scanner-toggle-container *,
+.btn-toggle-scanner,
+.btn-toggle-scanner * {
+  float: none !important;
+  position: static !important;
 }
 
 @keyframes pulseButton {
   0%, 100% { 
-    transform: scale(1); 
-    box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3); 
+    transform: scale(1) !important;
+    box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.4), 0 0 20px rgba(34, 197, 94, 0.3) !important;
   }
   50% { 
-    transform: scale(1.02); 
-    box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4); 
+    transform: scale(1.02) !important;
+    box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4) !important;
   }
 }
 
 .btn-toggle-scanner:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4);
+  transform: translateY(-2px) !important;
+  box-shadow: 0 15px 30px -5px rgba(34, 197, 94, 0.5), 0 0 30px rgba(34, 197, 94, 0.4) !important;
 }
 
 .btn-toggle-scanner:active {
-  transform: scale(0.98);
+  transform: scale(0.98) !important;
 }
 
 .btn-toggle-scanner.active {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-  box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.4), 0 0 20px rgba(239, 68, 68, 0.3);
-  animation: none;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.4), 0 0 20px rgba(239, 68, 68, 0.3) !important;
+  animation: none !important;
 }
     
     .actions { max-width: 450px; margin: 0 auto 20px; display: flex; gap: 10px; flex-wrap: wrap; position: relative; z-index: 10; }
