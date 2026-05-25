@@ -770,11 +770,10 @@ Hola *${person.nombre}*,
     }
     
     .vente-logo-img {
-      height: auto;
-      width: 100% !important;
-      max-width: 100% !important;
-      max-height: 45px; /* Altura máxima opcional */
-      object-fit: contain;
+      height: 45px !important; /* Altura FIJA - sin cambios */
+      width: 420px !important; /* ANCHO FIJO - aumenta este valor */
+      max-width: none !important; /* Sin restricción */
+      object-fit: fill !important; /* ESTIRA la imagen para llenar el espacio */
       filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
       transition: transform 0.3s ease;
     }
