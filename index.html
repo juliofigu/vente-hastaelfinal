@@ -765,8 +765,8 @@ Hola *${person.nombre}*,
       align-items: center;
       justify-content: center;
       gap: 8px;
-      width: 95%; /* Ocupa más ancho 90*/
-      max-width: 440px; /* Ancho máximo aumentado 440*/
+      width: calc(100% - 24px); /* Ancho dinámico menos padding */
+      max-width: 438px; /* 450px - 12px padding */
     }
     
     .vente-logo-img {
