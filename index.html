@@ -751,12 +751,12 @@ Hola *${person.nombre}*,
     /* Logo Vente en el header */
     .logo-vente {
       position: absolute;
-      top: 12px;
+      top: 15px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 11;
       text-align: center;
-      padding: 8px 16px;
+      padding: 10px 20px;
       background: rgba(255, 255, 255, 0.15);
       border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.3);
@@ -764,12 +764,14 @@ Hola *${person.nombre}*,
       align-items: center;
       justify-content: center;
       gap: 8px;
+      width: 90%; /* Ocupa más ancho */
+      max-width: 420px; /* Ancho máximo aumentado */
     }
     
     .vente-logo-img {
-      height: 45px;
+      height: 65px;
       width: auto;
-      max-width: 180px;
+      max-width: 100%;
       object-fit: contain;
       filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
       transition: transform 0.3s ease;
