@@ -43,6 +43,51 @@
       hashSalt: 'VENTE_CABIMAS_2024_SECURE_SALT_'
     };
 
+    // ===== CONFIGURACIÓN DE SEGURIDAD =====
+    const SECURITY = {
+      // Contraseña ofuscada en base64: 'cabimas*alacabimera2026' → 'Y2FiaW1hcyphbGFjYWJpbWVyYTIwMjY='
+      adminPassword: atob('Y2FiaW1hcyphbGFjYWJpbWVyYTIwMjY='),
+      maxAttempts: 3,
+      lockoutTime: 30000 // 30 segundos de bloqueo tras intentos fallidos
+    };
+
+    let loginAttempts = 0;
+    let lastAttemptTime = 0;
+
+    // ===== VERIFICAR CONTRASEÑA DE ADMINISTRADOR =====
+    function verificarAccesoAdmin() {
+      // Verificar bloqueo por intentos fallidos
+      const now = Date.now();
+      if (loginAttempts >= SECURITY.maxAttempts && (now - lastAttemptTime) < SECURITY.lockoutTime) {
+        const remaining = Math.ceil((SECURITY.lockoutTime - (now - lastAttemptTime)) / 1000);
+        showBubble(`🔒 Intenta en ${remaining}s`, 'error');
+        return false;
+      }
+      
+      // Solicitar contraseña
+      const pass = prompt('🔐 Contraseña de administrador:');
+      
+      if (pass === SECURITY.adminPassword) {
+        // Éxito: resetear intentos
+        loginAttempts = 0;
+        lastAttemptTime = 0;
+        showBubble('✅ Acceso concedido', 'success', 2000);
+        return true;
+      } else {
+        // Falló: incrementar contador
+        loginAttempts++;
+        lastAttemptTime = now;
+        const remaining = SECURITY.maxAttempts - loginAttempts;
+        
+        if (remaining > 0) {
+          showBubble(`❌ Contraseña incorrecta (${remaining} intento${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''})`, 'error');
+        } else {
+          showBubble(`🔒 Acceso bloqueado por ${Math.ceil(SECURITY.lockoutTime/1000)}s`, 'error', 4000);
+        }
+        return false;
+      }
+    }
+
     // ===== GENERAR HASH SEGURO (DETERMINISTA) =====
     async function generateSecureHash(cedula, timestamp) {
       const seed = timestamp || cedula;
@@ -135,6 +180,11 @@
     window.updateStats = updateStats;
     
     window.openModal = (id) => {
+      // Si es el modal de lista, verificar contraseña primero
+      if (id === 'modal-list' && !verificarAccesoAdmin()) {
+        return; // Denegar acceso
+      }
+      
       const el = document.getElementById(id);
       if (el) { 
         el.classList.add('active'); 
@@ -326,19 +376,25 @@
       updateStats();
     }
 
-    // ===== DESACTIVAR SCANNER AL USAR OTROS BOTONES =====
+    // ===== DESACTIVAR SCANNER + PROTEGER BOTONES =====
     function setupAutoDisableScanner() {
-      // Seleccionar todos los botones que deben desactivar el scanner
-      const buttonsToDisable = [
-        document.querySelector('.actions .btn-outline'), // Lista
-        document.querySelectorAll('.actions .btn-outline')[1], // Agregar
-        document.querySelector('.actions .btn-primary') // Exportar
-      ].filter(btn => btn); // Filtrar nulls
+      // Botones que requieren contraseña
+      const protectedButtons = [
+        { selector: '.actions .btn-outline', action: () => openModal('modal-list'), label: 'Lista' },
+        { selector: '.actions .btn-outline:nth-child(2)', action: () => openModal('modal-add'), label: 'Agregar' },
+        { selector: '.actions .btn-primary', action: exportReport, label: 'Exportar' }
+      ];
       
-      buttonsToDisable.forEach(btn => {
-        btn.addEventListener('click', () => {
+      protectedButtons.forEach(btnConfig => {
+        const btn = document.querySelector(btnConfig.selector);
+        if (!btn) return;
+        
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          // 🔹 Paso 1: Desactivar scanner si está activo (siempre)
           if (isScannerActive) {
-            // Desactivar scanner silenciosamente
             if (html5QrCode) {
               html5QrCode.stop().catch(() => {});
             }
@@ -355,6 +411,13 @@
               toggleBtn.classList.add('btn-success');
             }
           }
+          
+          // 🔹 Paso 2: Verificar contraseña antes de ejecutar acción
+          if (verificarAccesoAdmin()) {
+            // ✅ Contraseña correcta: ejecutar acción original
+            btnConfig.action();
+          }
+          // ❌ Contraseña incorrecta: no hacer nada (ya se mostró mensaje en verificarAccesoAdmin)
         });
       });
     }
@@ -673,7 +736,7 @@ Hola *${person.nombre}*,
       initScanner(); 
       updateStats(); 
       setupFormAdd();
-      setupAutoDisableScanner(); // ✅ NUEVO: Configurar desactivación automática
+      setupAutoDisableScanner(); // ✅ Configurar desactivación automática + protección
       
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js').catch(console.warn);
