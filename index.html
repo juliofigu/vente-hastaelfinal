@@ -179,17 +179,12 @@
     }
     window.updateStats = updateStats;
     
+    // openModal simplificado - sin verificación interna (se maneja en setupAutoDisableScanner)
     window.openModal = (id) => {
-      // Si es el modal de lista, verificar contraseña primero
-      if (id === 'modal-list' && !verificarAccesoAdmin()) {
-        return; // Denegar acceso
-      }
-      
       const el = document.getElementById(id);
       if (el) { 
         el.classList.add('active'); 
         if (id === 'modal-list') {
-          // Pausar scanner al abrir lista
           if (isScannerActive) {
             toggleScanner(false);
           }
@@ -376,48 +371,100 @@
       updateStats();
     }
 
-    // ===== DESACTIVAR SCANNER + PROTEGER BOTONES =====
+    // ===== DESACTIVAR SCANNER + PROTEGER BOTONES (VERSIÓN CORREGIDA) =====
     function setupAutoDisableScanner() {
-      // Botones que requieren contraseña
+      // Botones protegidos con sus acciones - TODO se maneja aquí
       const protectedButtons = [
-        { selector: '.actions .btn-outline', action: () => openModal('modal-list'), label: 'Lista' },
-        { selector: '.actions .btn-outline:nth-child(2)', action: () => openModal('modal-add'), label: 'Agregar' },
-        { selector: '.actions .btn-primary', action: exportReport, label: 'Exportar' }
+        { 
+          id: 'btn-lista', 
+          action: () => {
+            // 🔐 Verificar contraseña PRIMERO - si falla, NO ejecutar nada
+            if (!verificarAccesoAdmin()) return false;
+            
+            // 🔕 Desactivar scanner si está activo
+            if (isScannerActive) {
+              if (html5QrCode) html5QrCode.stop().catch(() => {});
+              isScannerActive = false;
+              isScannerPaused = false;
+              const btnContainer = document.querySelector('.scanner-toggle-container');
+              const toggleBtn = document.getElementById('btn-toggle-scanner');
+              if (btnContainer) btnContainer.style.display = 'block';
+              if (toggleBtn) {
+                toggleBtn.innerHTML = '📷 ACTIVAR SCANNER';
+                toggleBtn.classList.remove('btn-outline');
+                toggleBtn.classList.add('btn-success');
+              }
+            }
+            
+            // ✅ Ejecutar acción original (solo si contraseña fue correcta)
+            openModal('modal-list');
+            return true;
+          }
+        },
+        { 
+          id: 'btn-agregar', 
+          action: () => {
+            if (!verificarAccesoAdmin()) return false;
+            
+            if (isScannerActive) {
+              if (html5QrCode) html5QrCode.stop().catch(() => {});
+              isScannerActive = false;
+              isScannerPaused = false;
+              const btnContainer = document.querySelector('.scanner-toggle-container');
+              const toggleBtn = document.getElementById('btn-toggle-scanner');
+              if (btnContainer) btnContainer.style.display = 'block';
+              if (toggleBtn) {
+                toggleBtn.innerHTML = '📷 ACTIVAR SCANNER';
+                toggleBtn.classList.remove('btn-outline');
+                toggleBtn.classList.add('btn-success');
+              }
+            }
+            
+            openModal('modal-add');
+            return true;
+          }
+        },
+        { 
+          id: 'btn-exportar', 
+          action: () => {
+            if (!verificarAccesoAdmin()) return false;
+            
+            if (isScannerActive) {
+              if (html5QrCode) html5QrCode.stop().catch(() => {});
+              isScannerActive = false;
+              isScannerPaused = false;
+              const btnContainer = document.querySelector('.scanner-toggle-container');
+              const toggleBtn = document.getElementById('btn-toggle-scanner');
+              if (btnContainer) btnContainer.style.display = 'block';
+              if (toggleBtn) {
+                toggleBtn.innerHTML = '📷 ACTIVAR SCANNER';
+                toggleBtn.classList.remove('btn-outline');
+                toggleBtn.classList.add('btn-success');
+              }
+            }
+            
+            exportReport();
+            return true;
+          }
+        }
       ];
       
+      // Configurar event listeners para cada botón protegido
       protectedButtons.forEach(btnConfig => {
-        const btn = document.querySelector(btnConfig.selector);
+        const btn = document.getElementById(btnConfig.id);
         if (!btn) return;
         
+        // Remover cualquier onclick existente en el HTML
+        btn.removeAttribute('onclick');
+        
+        // Agregar nuevo listener que maneja TODO el flujo
         btn.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
           
-          // 🔹 Paso 1: Desactivar scanner si está activo (siempre)
-          if (isScannerActive) {
-            if (html5QrCode) {
-              html5QrCode.stop().catch(() => {});
-            }
-            isScannerActive = false;
-            isScannerPaused = false;
-            
-            // Mostrar botón de activación
-            const btnContainer = document.querySelector('.scanner-toggle-container');
-            const toggleBtn = document.getElementById('btn-toggle-scanner');
-            if (btnContainer) btnContainer.style.display = 'block';
-            if (toggleBtn) {
-              toggleBtn.innerHTML = '📷 ACTIVAR SCANNER';
-              toggleBtn.classList.remove('btn-outline');
-              toggleBtn.classList.add('btn-success');
-            }
-          }
-          
-          // 🔹 Paso 2: Verificar contraseña antes de ejecutar acción
-          if (verificarAccesoAdmin()) {
-            // ✅ Contraseña correcta: ejecutar acción original
-            btnConfig.action();
-          }
-          // ❌ Contraseña incorrecta: no hacer nada (ya se mostró mensaje en verificarAccesoAdmin)
+          // Ejecutar acción (que incluye verificación de contraseña)
+          // Si verificarAccesoAdmin() retorna false, la acción NO se ejecuta
+          btnConfig.action();
         });
       });
     }
@@ -736,7 +783,7 @@ Hola *${person.nombre}*,
       initScanner(); 
       updateStats(); 
       setupFormAdd();
-      setupAutoDisableScanner(); // ✅ Configurar desactivación automática + protección
+      setupAutoDisableScanner(); // ✅ Configurar protección de botones
       
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js').catch(console.warn);
@@ -798,7 +845,7 @@ Hola *${person.nombre}*,
     /* ===== HEADER CON LOGO VENTE ===== */
     header { 
       text-align: center; 
-      padding: 100px 15px 20px 15px; /* Padding superior aumentado para el logo */
+      padding: 100px 15px 20px 15px;
       background: linear-gradient(135deg, rgba(30, 64, 175, 0.95) 0%, rgba(59, 130, 246, 0.9) 100%); 
       color: white; 
       border-radius: 16px; 
@@ -809,7 +856,7 @@ Hola *${person.nombre}*,
       border: 2px solid rgba(255,255,255,0.1); 
       position: relative; 
       z-index: 10;
-      min-height: 180px; /* Altura mínima aumentada */
+      min-height: 180px;
     }
     
     /* Logo Vente en el header */
@@ -828,15 +875,15 @@ Hola *${person.nombre}*,
       align-items: center;
       justify-content: center;
       gap: 8px;
-      width: calc(100% - 24px); /* Ancho dinámico menos padding */
-      max-width: 438px; /* 450px - 12px padding */
+      width: calc(100% - 24px);
+      max-width: 438px;
     }
     
     .vente-logo-img {
-      height: 45px !important; /* Altura FIJA - sin cambios */
-      width: 420px !important; /* ANCHO FIJO - aumenta este valor */
-      max-width: none !important; /* Sin restricción */
-      object-fit: fill !important; /* ESTIRA la imagen para llenar el espacio */
+      height: 45px !important;
+      width: 420px !important;
+      max-width: none !important;
+      object-fit: fill !important;
       filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
       transition: transform 0.3s ease;
     }
@@ -846,7 +893,7 @@ Hola *${person.nombre}*,
     }
     
     header::before { 
-      content: ''; /* ⭐ */
+      content: '';
       position: absolute; 
       top: -10px; 
       left: 50%; 
@@ -996,7 +1043,6 @@ Hola *${person.nombre}*,
       animation: pulseButton 2s ease-in-out infinite !important;
     }
     
-    /* Eliminar cualquier estilo que pueda estar interfiriendo */
     #btn-toggle-scanner,
     button#btn-toggle-scanner,
     .btn#btn-toggle-scanner,
@@ -1006,7 +1052,6 @@ Hola *${person.nombre}*,
       display: block !important;
     }
     
-    /* Asegurar que no haya float o position que lo mueva */
     .scanner-toggle-container,
     .scanner-toggle-container *,
     .btn-toggle-scanner,
@@ -1236,11 +1281,9 @@ Hola *${person.nombre}*,
       .btn { font-size: 0.85rem; padding: 12px 14px; } 
       .btn-toggle-scanner { font-size: 1.1rem; padding: 18px 20px; }
       
-      /* Responsive para logo en móviles */
       .vente-logo-img {
         height: 38px;
         max-width: 140px;
-        
       }
       header {
         padding-top: 78px !important;
@@ -1282,11 +1325,14 @@ Hola *${person.nombre}*,
     <div class="stat-card"><div class="value" id="count-duplicates">0</div><div class="label">⚠️ Duplicados</div></div>
     <div class="stat-card"><div class="value" id="count-errors">0</div><div class="label">❌ Errores</div></div>
   </div>
+  
+  <!-- Botones con IDs en lugar de onclick -->
   <div class="actions">
-    <button class="btn btn-outline" onclick="openModal('modal-list')">📋 Lista</button>
-    <button class="btn btn-outline" onclick="openModal('modal-add')">➕ Agregar</button>
-    <button class="btn btn-primary" onclick="exportReport()">📊 Exportar</button>
+    <button class="btn btn-outline" id="btn-lista">📋 Lista</button>
+    <button class="btn btn-outline" id="btn-agregar">➕ Agregar</button>
+    <button class="btn btn-primary" id="btn-exportar">📊 Exportar</button>
   </div>
+  
   <div id="modal-list" class="modal">
     <div class="modal-content">
       <div class="modal-header"><span class="modal-title">📋 Asistentes Registrados</span><button class="modal-close" onclick="closeModal('modal-list')">&times;</button></div>
