@@ -45,7 +45,7 @@
 
     // ===== CONFIGURACIÓN DE SEGURIDAD =====
     const SECURITY = {
-      // Contraseña ofuscada en base64: 'cabimas*alacabimera2026' → 'Y2FiaW1hcyphbGFjYWJpbWVyYTIwMjY='
+      // Contraseña ofuscada en base64: '*cabimas*a*la*venezolana*2026*' → 'KymFgsYWNjhYmltZXJhKg=='
       adminPassword: atob('KmFsYWNhYmltZXJhKg=='),
       maxAttempts: 3,
       lockoutTime: 30000 // 30 segundos de bloqueo tras intentos fallidos
@@ -53,6 +53,9 @@
 
     let loginAttempts = 0;
     let lastAttemptTime = 0;
+    
+    // ===== ESTADO DE SESIÓN DE ADMINISTRADOR =====
+    let isAdminSessionActive = false; // Persiste mientras la página esté abierta
 
     // ===== VERIFICAR CONTRASEÑA DE ADMINISTRADOR =====
     function verificarAccesoAdmin() {
@@ -371,9 +374,9 @@
       updateStats();
     }
 
-    // ===== DESACTIVAR SCANNER + PROTEGER BOTONES (VERSIÓN CORREGIDA) =====
+    // ===== DESACTIVAR SCANNER + PROTEGER BOTONES (VERSIÓN CON SESIÓN PERSISTENTE) =====
     function setupAutoDisableScanner() {
-      // Botones protegidos con sus acciones - TODO se maneja aquí
+      // Botones protegidos con sus acciones
       const protectedButtons = [
         { 
           id: 'btn-lista', 
@@ -404,8 +407,13 @@
         { 
           id: 'btn-agregar', 
           action: () => {
-            if (!verificarAccesoAdmin()) return false;
+            // 🔐 Verificar contraseña SOLO si no hay sesión activa
+            if (!isAdminSessionActive && !verificarAccesoAdmin()) return false;
             
+            // ✅ Activar sesión de administrador (persiste hasta refresh)
+            isAdminSessionActive = true;
+            
+            // 🔕 Desactivar scanner si está activo
             if (isScannerActive) {
               if (html5QrCode) html5QrCode.stop().catch(() => {});
               isScannerActive = false;
@@ -420,6 +428,7 @@
               }
             }
             
+            // ✅ Abrir modal de agregar
             openModal('modal-add');
             return true;
           }
@@ -463,7 +472,6 @@
           e.stopPropagation();
           
           // Ejecutar acción (que incluye verificación de contraseña)
-          // Si verificarAccesoAdmin() retorna false, la acción NO se ejecuta
           btnConfig.action();
         });
       });
@@ -611,11 +619,11 @@
       } catch (err) { container.innerHTML = `<p style="padding:20px;color:#ef4444">Error: ${err.message}</p>`; }
     }
 
-    // ===== AGREGAR ASISTENTE =====
+    // ===== AGREGAR ASISTENTE (CON MODAL PERSISTENTE Y SESIÓN DE ADMINISTRADOR) =====
     function setupFormAdd() {
       const form = document.getElementById('form-add');
       if (!form) return;
-  
+
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const data = {
@@ -624,7 +632,7 @@
           parroquia: document.getElementById('add-parroquia').value,
           telefono: document.getElementById('add-telefono').value.replace(/\D/g, '')
         };
-    
+
         try {
           if (await DB.get(data.cedula)) { 
             showBubble('⚠️ Cédula ya registrada', 'warning'); 
@@ -675,18 +683,61 @@ Hola *${data.nombre}*,
               await DB.update(data.cedula, { qrSent: true });
               showBubble('📤 Instrucciones enviadas por WhatsApp', 'success');
             }
-         }
+          }
       
-          e.target.reset(); 
-          closeModal('modal-add'); 
-          updateStats(); 
+          // ✅ RESETEAR formulario para siguiente asistente (NO cerrar modal)
+          e.target.reset();
+          updateStats();
           renderAttendeesList();
-      
+          
+          // ✅ Mostrar mensaje de "Listo para siguiente"
+          showBubble('✅ Listo para siguiente asistente', 'success', 2500);
+          
+          // ✅ Enfocar campo de cédula para agilizar siguiente registro
+          setTimeout(() => {
+            document.getElementById('add-cedula')?.focus();
+          }, 500);
+          
+          // ❌ NO cerrar modal: isAdminSessionActive mantiene el acceso
+          // El operador puede seguir agregando sin contraseña
+  
         } catch (err) { 
           console.error('Error registrando asistente:', err);
           showBubble('❌ Error: ' + err.message, 'error'); 
         }
       });
+      
+      // ✅ Agregar botón "🔒 Terminar" en el header del modal de agregar
+      const modalAdd = document.getElementById('modal-add');
+      if (modalAdd) {
+        const modalHeader = modalAdd.querySelector('.modal-header');
+        if (modalHeader && !document.getElementById('btn-end-session')) {
+          const endSessionBtn = document.createElement('button');
+          endSessionBtn.id = 'btn-end-session';
+          endSessionBtn.className = 'btn btn-sm btn-outline';
+          endSessionBtn.style.marginLeft = '10px';
+          endSessionBtn.textContent = '🔒 Terminar';
+          endSessionBtn.title = 'Cerrar modal y finalizar sesión de administrador';
+          endSessionBtn.addEventListener('click', () => {
+            isAdminSessionActive = false; // Resetear sesión
+            closeModal('modal-add'); // Cerrar modal
+            showBubble('🔒 Sesión de administrador finalizada', 'info', 2000);
+          });
+          modalHeader.appendChild(endSessionBtn);
+        }
+        
+        // ✅ Resetear sesión si cierran modal con la "X"
+        const closeBtn = modalAdd.querySelector('.modal-close');
+        if (closeBtn) {
+          closeBtn.addEventListener('click', () => {
+            // Solo resetear si cerraron manualmente (no con el botón "Terminar")
+            if (isAdminSessionActive) {
+              isAdminSessionActive = false;
+              showBubble('🔒 Sesión finalizada', 'info', 1500);
+            }
+          });
+        }
+      }
     }
 
     // ===== ENVIAR QR: MENSAJE DE TEXTO CON ENLACE A miQR =====
