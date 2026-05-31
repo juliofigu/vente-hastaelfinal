@@ -291,10 +291,17 @@
         if (el('count-scanned')) el('count-scanned').textContent = c.scanned;
         if (el('count-total')) el('count-total').textContent = c.total;
         if (el('count-duplicates')) el('count-duplicates').textContent = c.duplicates;
-        if (el('count-errors')) el('count-errors').textContent = c.errors;
-        if (el('last-sync')) el('last-sync').textContent = `Última actualización: ${new Date().toLocaleTimeString('es-VE')}`;
-      } catch(e) { console.error(e); }
-    }
+        // ✅ AGREGAR ESTAS LÍNEAS:
+        const remaining = c.total - c.scanned;
+        if (el('count-remaining')) {
+          el('count-remaining').textContent = remaining >= 0 ? remaining : 0;
+          // Cambiar color si ya llegaron todos
+          if (remaining <= 0) el('count-remaining').style.color = '#22c55e'; // Verde si completó
+        }
+
+    if (el('last-sync')) el('last-sync').textContent = `Última actualización: ${new Date().toLocaleTimeString('es-VE')}`;
+  } catch(e) { console.error(e); }
+}
     window.updateStats = updateStats;
     
     // openModal simplificado - sin verificación interna (se maneja en setupAutoDisableScanner)
@@ -1624,7 +1631,8 @@ if (typeof window !== 'undefined' &&
     <div class="stat-card"><div class="value" id="count-scanned">0</div><div class="label">✅ Ingresaron</div></div>
     <div class="stat-card"><div class="value" id="count-total">0</div><div class="label">📋 Registrados</div></div>
     <div class="stat-card"><div class="value" id="count-duplicates">0</div><div class="label">⚠️ Duplicados</div></div>
-    <div class="stat-card"><div class="value" id="count-errors">0</div><div class="label">❌ Errores</div></div>
+    <!-- Nuevo globo: Asistentes que faltan por llegar -->
+    <div class="stat-card"><div class="value" id="count-remaining" style="color:#f59e0b">0</div><div class="label"> Por Llegar</div></div>
   </div>
   
     <!-- Indicador de pendientes offline (se muestra solo si hay) -->
