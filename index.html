@@ -56,6 +56,11 @@
     
     // ===== ESTADO DE SESIÓN DE ADMINISTRADOR =====
     let isAdminSessionActive = false; // Persiste mientras la página esté abierta
+    // ===== SISTEMA DE CACHÉ HÍBRIDA (PARA 4 TELÉFONOS - OPTIMIZACIÓN) =====
+    let attendeesCache = new Map(); // Caché local: cedula -> datos completos
+    let isCacheLoaded = false;       // Indica si ya se sincronizó la lista
+    let lastSyncTime = 0;            // Timestamp de última sincronización
+    const CACHE_TTL = 300000;        // 5 minutos para auto-refresh opcional
 
     // ===== VERIFICAR CONTRASEÑA DE ADMINISTRADOR =====
     function verificarAccesoAdmin() {
@@ -122,18 +127,40 @@
           whatsapp: `https://wa.me/58${telefonoLimpio}`
         };
         
-        await setDoc(doc(firestore, "asistentes", data.cedula), asistenteData);
+        await setDoc(doc(firestore, "asistentes", data.cedula), asistenteData); 
+
+          // Actualizar caché local si está cargada
+     if (isCacheLoaded) {
+        attendeesCache.set(data.cedula, asistenteData);
+      }
+
       },
       async get(cedula) {
-        const snap = await getDoc(doc(firestore, "asistentes", cedula));
-        return snap.exists() ? snap.data() : null;
-      },
+      // Primero buscar en caché local (velocidad instantánea)
+      if (isCacheLoaded && attendeesCache.has(cedula)) {
+        return attendeesCache.get(cedula);
+      }
+      // Si no hay caché, buscar en Firebase (fallback)
+      const snap = await getDoc(doc(firestore, "asistentes", cedula));
+      return snap.exists() ? snap.data() : null;
+    },
       async update(cedula, updates) {
         await updateDoc(doc(firestore, "asistentes", cedula), { 
           ...updates, timestamp: new Date().toISOString() 
         });
+
+      // Actualizar caché local si existe
+      if (isCacheLoaded && attendeesCache.has(cedula)) {
+        const current = attendeesCache.get(cedula);
+        attendeesCache.set(cedula, { ...current, ...updates });
+      }
       },
       async getAll() {
+        // Si hay caché cargada, devolverla (sin lecturas a Firebase)
+        if (isCacheLoaded) {
+        return Array.from(attendeesCache.values());
+        }
+        // Si no, leer de Firebase (solo para lista/exportar)
         const snapshot = await getDocs(collection(firestore, "asistentes"));
         const attendees = [];
         snapshot.forEach(d => attendees.push({ cedula: d.id, ...d.data() }));
@@ -477,112 +504,165 @@
       });
     }
 
-    // ===== PROCESAR QR ESCANEADO =====
-    async function processQR(decodedText) {
-      try {
-        isScannerPaused = true;
-        if (html5QrCode && typeof html5QrCode.pause === 'function') {
-          html5QrCode.pause();
-        }
-        
-        const scannedValue = decodedText.trim();
-        const isSecureHash = /^[a-f0-9]{64}$/.test(scannedValue);
-        let cedula = null;
-        
-        if (isSecureHash) {
-          try {
-            const hashDoc = await getDoc(doc(firestore, "hashIndex", scannedValue));
-            if (hashDoc.exists()) cedula = hashDoc.data().cedula;
-          } catch (e) { console.warn('⚠️ No se pudo consultar hashIndex:', e.message); }
-          
-          if (!cedula) {
-            const snapshot = await getDocs(collection(firestore, "asistentes"));
-            for (const d of snapshot.docs) {
-              const data = d.data();
-              if (data.qrHash === scannedValue) { cedula = d.id; break; }
-            }
-          }
-          
-          if (!cedula) {
-            triggerFeedback('error');
-            showScanResultModal(null, 'error', '❌ Código QR no registrado en el sistema.', resumeScanner);
-            await logError(scannedValue.substring(0, 8), 'Hash no encontrado');
-            return;
-          }
-        } else {
-          const cleaned = scannedValue.replace(/[\r\n\t]+/g, '|').trim();
-          const parts = cleaned.split('|').map(p => p.trim()).filter(p => p.length > 0);
-          
-          if (parts.length < 4) {
-            triggerFeedback('error');
-            showScanResultModal(null, 'error', '❌ Formato de QR inválido. Verifique el código.', resumeScanner);
-            await logError('invalid_format', `Partes: ${parts.length}`);
-            return;
-          }
-          
-          cedula = parts[0].toUpperCase().replace(/^V-?/, '').trim();
-          if (!/^[0-9]{6,8}$/.test(cedula)) {
-            triggerFeedback('error');
-            showScanResultModal(null, 'error', '❌ Cédula inválida en el QR.', resumeScanner);
-            await logError('invalid_cedula', `Cédula: ${cedula}`);
-            return;
-          }
-        }
-        
-        const attendee = await DB.get(cedula);
-        if (!attendee) {
-          triggerFeedback('error');
-          showScanResultModal(null, 'error', `❌ "${cedula}" no está autorizado para este evento.`, resumeScanner);
-          await logError(cedula, 'No existe en DB');
-          return;
-        }
-        
-        if (attendee.scanned) {
-          const count = (attendee.scannedCount || 1) + 1;
-          await DB.update(cedula, { scannedCount: count, lastScanned: new Date().toISOString() });
-          try {
-            await updateDoc(doc(firestore, "asistentes", cedula), {
-              scannedCount: count, lastScanned: new Date().toISOString()
-            });
-          } catch (e) { console.warn('⚠️ No se pudo sincronizar:', e.message); }
-          
-          triggerFeedback('warning');
-          showScanResultModal(
-            attendee, 
-            'warning', 
-            `⚠️ ${attendee.nombre} YA INGRESÓ al evento.\nÚltimo escaneo: ${count} vez${count > 1 ? 'es' : ''}.`, 
-            resumeScanner
-          );
-          return;
-        }
-        
-        await DB.update(cedula, { 
-          scanned: true, 
-          scannedCount: 1,
-          firstScanned: new Date().toISOString()
+// ===== SINCRONIZAR CACHÉ (FUNCIÓN CLAVE PARA 4 TELÉFONOS) =====
+    window.sincronizarCache = async function() {
+      showBubble('🔄 Sincronizando lista de asistentes...', 'info');
+  
+     try {
+        const snapshot = await getDocs(collection(firestore, "asistentes"));
+        attendeesCache.clear();
+    
+        snapshot.forEach(doc => {
+         // Guardar cédula como clave y datos completos como valor
+          attendeesCache.set(doc.id, { cedula: doc.id, ...doc.data() });
         });
-        try {
-          await updateDoc(doc(firestore, "asistentes", cedula), {
-            scanned: true, scannedCount: 1, firstScanned: new Date().toISOString()
-          });
-        } catch (e) { console.warn('⚠️ Sync fallida:', e.message); }
-        
-        triggerFeedback('success');
-        showScanResultModal(
-          attendee, 
-          'success', 
-          `✅ ${attendee.nombre} está AUTORIZADO para ingresar.\nParroquia: ${attendee.parroquia}`, 
-          resumeScanner
-        );
-        updateStats();
-        
-      } catch (err) {
-        console.error('❌ Error procesando QR:', err);
-        triggerFeedback('error');
-        showScanResultModal(null, 'error', `❌ Error al validar: ${err.message}`, resumeScanner);
-        await logError('unknown', err.message);
+    
+        isCacheLoaded = true;
+       lastSyncTime = Date.now();
+    
+        const count = attendeesCache.size;
+        showBubble(`✅ ¡Listo! ${count} asistentes cargados`, 'success', 4000);
+        console.log('✅ Caché local cargada:', count, 'asistentes');
+    
+       // Actualizar estadísticas en pantalla
+       updateStats();
+    
+      } catch (e) {
+       console.error('❌ Error cargando caché:', e);
+        showBubble('❌ Error al sincronizar lista', 'error', 5000);
+      }
+    };
+
+    // ===== PROCESAR QR ESCANEADO =====
+    // ===== PROCESAR QR (MODO CACHÉ HÍBRIDA - OPTIMIZADO PARA EVENTO) =====
+async function processQR(decodedText) {
+  try {
+    isScannerPaused = true;
+    
+    // Si no hay caché cargada, intentar cargarla automáticamente
+    if (!isCacheLoaded) {
+      showBubble('⏳ Cargando lista...', 'info', 2000);
+      await window.sincronizarCache();
+      if (!isCacheLoaded) {
+        showBubble('❌ No se pudo cargar lista de asistentes', 'error');
+        resumeScanner();
+        return;
       }
     }
+    
+    const scannedValue = decodedText.trim();
+    const isSecureHash = /^[a-f0-9]{64}$/.test(scannedValue);
+    let cedula = null;
+    
+    // Extraer cédula del QR (soporta ambos formatos)
+    if (isSecureHash) {
+      // Búsqueda por hash en caché local (rápido, sin lecturas a Firebase)
+      for (let [key, value] of attendeesCache.entries()) {
+        if (value.qrHash === scannedValue) {
+          cedula = key;
+          break;
+        }
+      }
+    } else {
+      // Formato antiguo: cédula directa o formato pipe-separated
+      const cleaned = scannedValue.replace(/[\r\n\t]+/g, '|').trim();
+      const parts = cleaned.split('|').map(p => p.trim()).filter(p => p.length > 0);
+      
+      if (parts.length >= 4) {
+        cedula = parts[0].toUpperCase().replace(/^V-?/, '').trim();
+      } else {
+        // Intentar como cédula directa
+        cedula = scannedValue.toUpperCase().replace(/^V-?/, '').trim();
+      }
+    }
+    
+    // Validar cédula
+    if (!cedula || !/^[0-9]{6,8}$/.test(cedula)) {
+      triggerFeedback('error');
+      showScanResultModal(null, 'error', '❌ Formato de QR inválido', resumeScanner);
+      return;
+    }
+    
+    // Buscar en CACHÉ LOCAL (velocidad instantánea, sin internet)
+    const attendee = attendeesCache.get(cedula);
+    
+    if (!attendee) {
+      triggerFeedback('error');
+      showScanResultModal(null, 'error', `❌ "${cedula}" no está en la lista`, resumeScanner);
+      await logError(cedula, 'No encontrado en caché');
+      return;
+    }
+    
+    // Validar si ya ingresó (usando caché local)
+    if (attendee.scanned) {
+      triggerFeedback('warning');
+      showScanResultModal(
+        attendee, 
+        'warning', 
+        `⚠️ ${attendee.nombre} YA INGRESÓ\nÚltimo escaneo: ${attendee.scannedCount} vez${attendee.scannedCount > 1 ? 'es' : ''}`, 
+        resumeScanner
+      );
+      return;
+    }
+    
+    // ✅ PRIMER INGRESO: Marcar en Firebase (escritura para sincronizar con otros 3 teléfonos)
+    try {
+      const count = (attendee.scannedCount || 0) + 1;
+      
+      // Actualizar en Firebase (esto sincroniza el estado con los otros teléfonos)
+      await updateDoc(doc(firestore, "asistentes", cedula), {
+        scanned: true,
+        scannedCount: count,
+        lastScanned: new Date().toISOString()
+      });
+      
+      // Actualizar caché local inmediatamente para próximos escaneos
+      attendee.scanned = true;
+      attendee.scannedCount = count;
+      attendee.lastScanned = new Date().toISOString();
+      attendeesCache.set(cedula, attendee);
+      
+      // Feedback exitoso
+      triggerFeedback('success');
+      showScanResultModal(
+        attendee, 
+        'success', 
+        `✅ ${attendee.nombre} AUTORIZADO\nParroquia: ${attendee.parroquia}`, 
+        resumeScanner
+      );
+      
+      // Actualizar estadísticas
+      updateStats();
+      
+    } catch (firestoreError) {
+      // Si falla la escritura, verificar si fue conflicto (otro teléfono ya lo marcó)
+      console.warn('⚠️ Conflicto de escritura:', firestoreError.message);
+      
+      // Re-leer el documento para ver el estado actual desde Firebase
+      const freshDoc = await getDoc(doc(firestore, "asistentes", cedula));
+      if (freshDoc.exists() && freshDoc.data().scanned) {
+        // Otro teléfono ya lo marcó como ingresado
+        triggerFeedback('warning');
+        showScanResultModal(
+          { ...attendee, ...freshDoc.data() },
+          'warning',
+          '⚠️ Registrado por otro punto de control',
+          resumeScanner
+        );
+      } else {
+        // Error real de escritura
+        triggerFeedback('error');
+        showScanResultModal(attendee, 'error', '❌ Error al registrar ingreso', resumeScanner);
+      }
+    }
+    
+  } catch (err) {
+    console.error('❌ Error procesando QR:', err);
+    triggerFeedback('error');
+    showScanResultModal(null, 'error', `❌ Error: ${err.message}`, resumeScanner);
+    await logError('processQR_error', err.message);
+  }
+}
 
     // ===== REANUDAR SCANNER DESPUÉS DE CONFIRMACIÓN =====
     function resumeScanner() {
@@ -835,6 +915,11 @@ Hola *${person.nombre}*,
       updateStats(); 
       setupFormAdd();
       setupAutoDisableScanner(); // ✅ Configurar protección de botones
+
+      // Auto-sincronizar caché al cargar si hay conexión (background, no bloquea)
+      if (navigator.onLine && !isCacheLoaded) {
+        window.sincronizarCache().catch(() => {});
+      }
       
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js').catch(console.warn);
@@ -852,33 +937,37 @@ Hola *${person.nombre}*,
     }
 
     // ===== DEBUG =====
-    if (typeof window !== 'undefined' && 
-        (window.location.hostname === 'localhost' || window.location.hostname.includes('github.io'))) {
-      
-      window.__DEBUG__ = {
-        DB: typeof DB !== 'undefined' ? DB : null,
-        isHash: (str) => /^[a-f0-9]{64}$/.test(str?.trim()),
-        isOldFormat: (str) => str?.split('|')?.map(p => p.trim()).length >= 4,
-        processQR: typeof processQR === 'function' ? processQR : null,
-        toggleScanner: typeof toggleScanner === 'function' ? toggleScanner : null,
-        isScannerActive: () => isScannerActive,
-        testProcessQR: async (decodedText) => {
-          try {
-            if (typeof processQR === 'function') {
-              await processQR(decodedText);
-              console.log('✅ ProcessQR ejecutado');
-            } else {
-              console.warn('⚠️ processQR no está disponible');
-            }
-          } catch (err) {
-            console.error('❌ ProcessQR error:', err.message);
-          }
-        },
-        firestoreReady: typeof firestore !== 'undefined'
-      };
-      
-      console.log('🔧 Debug tools ready. Usa window.__DEBUG__ en consola');
-    }
+if (typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || window.location.hostname.includes('github.io'))) {
+  
+  window.__DEBUG__ = {
+    DB: typeof DB !== 'undefined' ? DB : null,
+    isHash: (str) => /^[a-f0-9]{64}$/.test(str?.trim()),
+    isOldFormat: (str) => str?.split('|')?.map(p => p.trim()).length >= 4,
+    processQR: typeof processQR === 'function' ? processQR : null,
+    toggleScanner: typeof toggleScanner === 'function' ? toggleScanner : null,
+    isScannerActive: () => isScannerActive,
+    testProcessQR: async (decodedText) => {
+      try {
+        if (typeof processQR === 'function') {
+          await processQR(decodedText);
+          console.log('✅ ProcessQR ejecutado');
+        } else {
+          console.warn('⚠️ processQR no está disponible');
+        }
+      } catch (err) {
+        console.error('❌ ProcessQR error:', err.message);
+      }
+    },
+    firestoreReady: typeof firestore !== 'undefined',  // ← COMA AGREGADA AQUÍ ✅
+    // === NUEVAS PROPIEDADES PARA CACHÉ ===
+    sincronizarCache: typeof window.sincronizarCache === 'function' ? window.sincronizarCache : null,
+    cacheInfo: () => ({ loaded: isCacheLoaded, size: attendeesCache?.size || 0 }),
+    // === FIN NUEVAS PROPIEDADES ===
+  };
+  
+  console.log('🔧 Debug tools ready. Usa window.__DEBUG__ en consola');
+}
     
     // Exponer toggleScanner globalmente
     window.toggleScanner = toggleScanner;
@@ -1378,10 +1467,17 @@ Hola *${person.nombre}*,
   </div>
   
   <!-- Botones con IDs en lugar de onclick -->
+  <!-- Botones con IDs + Botón de Sincronización para Evento -->
   <div class="actions">
     <button class="btn btn-outline" id="btn-lista">📋 Lista</button>
     <button class="btn btn-outline" id="btn-agregar">➕ Agregar</button>
     <button class="btn btn-primary" id="btn-exportar">📊 Exportar</button>
+    <!-- Botón de sincronización: cargar lista para escaneo rápido (clave para 4 teléfonos) -->
+    <button class="btn btn-primary" onclick="sincronizarCache()" 
+            style="background:linear-gradient(135deg,#059669 0%,#047857 100%)" 
+            title="Cargar lista de asistentes para escaneo rápido">
+     🔄 Sincronizar
+    </button>
   </div>
   
   <div id="modal-list" class="modal">
@@ -1401,7 +1497,7 @@ Hola *${person.nombre}*,
           <option>1.- German Rios Linares</option><option>2.- Romulo Betancourt</option><option>3.- Carmen Herrera</option>
           <option>4.- Ambrosio</option><option>5.- San Benito</option><option>6.- Aristides Calvani</option>
           <option>7.- Pta. Gorda</option><option>8.- La Rosa</option><option>9.- Jorge Hernandez</option>
-          <option>10.- Invitados VENTE ZULIA</option><option>11.- Invitado ESPECIAL</option>
+          <option>10.- Invitados VENTE ZULIA</option><option>11.- Invitado ESPECIAL</option><option>12.- Periodista</option>
         </select></div>
         <div class="form-group"><label>Teléfono *</label><input type="tel" id="add-telefono" placeholder="Ej: 04124245521" pattern="0[4][0-9]{9}" required><small>Formato: 04XX-XXXXXXX</small></div>
         <button type="submit" class="btn btn-success" style="width:100%; padding: 16px;">💾 Guardar y Generar QR</button>
