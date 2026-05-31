@@ -62,6 +62,94 @@
     let lastSyncTime = 0;            // Timestamp de última sincronización
     const CACHE_TTL = 300000;        // 5 minutos para auto-refresh opcional
 
+    // ===== COLA DE PENDIENTES OFFLINE (para sincronizar cuando vuelva internet) =====
+    const PENDING_SYNC_KEY = 'vente_pending_sync_v1'; // Clave única en localStorage
+
+    // Obtener cola de pendientes desde localStorage
+    function getPendingSyncQueue() {
+      try {
+        const stored = localStorage.getItem(PENDING_SYNC_KEY);
+        return stored ? JSON.parse(stored) : [];
+      } catch (e) {
+        console.warn('⚠️ Error leyendo cola de pendientes:', e);
+        return [];
+      }
+    }
+
+    // Guardar cola de pendientes en localStorage
+    function savePendingSyncQueue(queue) {
+      try {
+        localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(queue));
+        return true;
+      } catch (e) {
+        console.warn('⚠️ Error guardando cola de pendientes:', e);
+        return false;
+      }
+    }
+
+    // Agregar un registro a la cola de pendientes
+    function enqueuePendingSync(cedula, updates) {
+      const queue = getPendingSyncQueue();
+      const timestamp = Date.now();
+  
+      // Buscar si ya existe para esta cédula (actualizar en lugar de duplicar)
+      const existingIndex = queue.findIndex(item => item.cedula === cedula);
+      if (existingIndex >= 0) {
+        // Actualizar existente con nuevos valores + timestamp más reciente
+        queue[existingIndex] = { cedula, updates: { ...queue[existingIndex].updates, ...updates }, timestamp };
+      } else {
+        // Agregar nuevo
+        queue.push({ cedula, updates, timestamp });
+      }
+  
+      savePendingSyncQueue(queue);
+      console.log(`📥 Encolado para sync: ${cedula}`, updates);
+      return true;
+    }
+
+    // Procesar cola de pendientes (intentar enviar a Firebase)
+    async function processPendingSyncQueue() {
+      const queue = getPendingSyncQueue();
+      if (queue.length === 0) return { success: 0, failed: 0 };
+  
+      console.log(`🔄 Procesando ${queue.length} pendientes de sincronización...`);
+      let success = 0, failed = 0;
+      const newQueue = [];
+  
+      for (const item of queue) {
+       try {
+          await updateDoc(doc(firestore, "asistentes", item.cedula), item.updates);
+          console.log(`✅ Sync completada: ${item.cedula}`);
+          success++;
+      
+          // Si está en caché local, actualizar también
+          if (attendeesCache.has(item.cedula)) {
+            const current = attendeesCache.get(item.cedula);
+            attendeesCache.set(item.cedula, { ...current, ...item.updates });
+          }
+        } catch (e) {
+          console.warn(`⚠️ Sync fallida para ${item.cedula}:`, e.message);
+          failed++;
+          // Mantener en cola para reintentar después
+          newQueue.push(item);
+        }
+      }
+  
+      // Guardar cola actualizada (solo los que fallaron)
+      savePendingSyncQueue(newQueue);
+  
+      // Actualizar UI si hay cambios
+      if (success > 0) {
+        updateStats();
+        showBubble(`✅ ${success} registro${success > 1 ? 's' : ''} sincronizado${success > 1 ? 's' : ''}`, 'success', 3000);
+     }
+      if (failed > 0) {
+        showBubble(`⚠️ ${failed} pendiente${failed > 1 ? 's' : ''} por sincronizar`, 'warning', 4000);
+      }
+  
+      return { success, failed };
+    }
+
     // ===== VERIFICAR CONTRASEÑA DE ADMINISTRADOR =====
     function verificarAccesoAdmin() {
       // Verificar bloqueo por intentos fallidos
@@ -505,30 +593,89 @@
     }
 
 // ===== SINCRONIZAR CACHÉ (FUNCIÓN CLAVE PARA 4 TELÉFONOS) =====
+    // ===== SINCRONIZAR CACHÉ CON MERGE INTELIGENTE (offline→online) =====
     window.sincronizarCache = async function() {
       showBubble('🔄 Sincronizando lista de asistentes...', 'info');
   
-     try {
+      try {
+        // 1. Guardar cambios locales NO sincronizados ANTES de limpiar caché
+        const localChanges = new Map();
+        if (isCacheLoaded) {
+          for (let [cedula, data] of attendeesCache.entries()) {
+            // Si está marcado como escaneado localmente pero no en Firebase (por offline)
+            if (data.scanned && data.lastScanned) {
+              // Verificar si ya está en cola de pendientes
+              const pending = getPendingSyncQueue().find(p => p.cedula === cedula);
+              if (!pending) {
+                // No está en cola → agregar para asegurar sincronización
+                enqueuePendingSync(cedula, {
+                  scanned: data.scanned,
+                 scannedCount: data.scannedCount,
+                 lastScanned: data.lastScanned
+                });
+              }
+            }
+          }
+        }
+    
+        // 2. Descargar datos frescos desde Firebase
         const snapshot = await getDocs(collection(firestore, "asistentes"));
-        attendeesCache.clear();
+    
+        // 3. Merge inteligente: combinar Firebase + cambios locales pendientes
+        const newCache = new Map();
+        const pendingQueue = getPendingSyncQueue();
     
         snapshot.forEach(doc => {
-         // Guardar cédula como clave y datos completos como valor
-          attendeesCache.set(doc.id, { cedula: doc.id, ...doc.data() });
+          const cedula = doc.id;
+         const firebaseData = doc.data();
+      
+          // Buscar si hay cambios locales pendientes para esta cédula
+          const pending = pendingQueue.find(p => p.cedula === cedula);
+      
+          if (pending) {
+            // Merge: Firebase como base + cambios locales como prioridad
+            newCache.set(cedula, {
+             cedula,
+              ...firebaseData,
+              ...pending.updates,  // Los cambios locales sobrescriben
+             _synced: false  // Marcador interno: aún no confirmado por Firebase
+            });
+          } else {
+            // Sin cambios locales → usar datos de Firebase tal cual
+            newCache.set(cedula, { cedula, ...firebaseData });
+          }
         });
     
+        // 4. Reemplazar caché con el resultado del merge
+        attendeesCache = newCache;
         isCacheLoaded = true;
-       lastSyncTime = Date.now();
+        lastSyncTime = Date.now();
     
         const count = attendeesCache.size;
-        showBubble(`✅ ¡Listo! ${count} asistentes cargados`, 'success', 4000);
-        console.log('✅ Caché local cargada:', count, 'asistentes');
+        const pendingCount = getPendingSyncQueue().length;
     
-       // Actualizar estadísticas en pantalla
-       updateStats();
+       let message = `✅ ¡Listo! ${count} asistentes`;
+        if (pendingCount > 0) {
+         message += ` • ${pendingCount} pendiente${pendingCount > 1 ? 's' : ''} por sincronizar`;
+       }
+        showBubble(message, 'success', 4000);
+        console.log('✅ Caché actualizada con merge:', { total: count, pending: pendingCount });
+    
+        // 5. Intentar procesar cola de pendientes ahora que hay conexión
+        if (navigator.onLine && pendingCount > 0) {
+          console.log('🔄 Intentando sincronizar pendientes...');
+          processPendingSyncQueue().then(result => {
+           if (result.success > 0) {
+              console.log(`✅ ${result.success} pendientes sincronizados`);
+            }
+          });
+        }
+    
+        // 6. Actualizar estadísticas en pantalla
+        updateStats();
     
       } catch (e) {
-       console.error('❌ Error cargando caché:', e);
+        console.error('❌ Error cargando caché:', e);
         showBubble('❌ Error al sincronizar lista', 'error', 5000);
       }
     };
@@ -599,7 +746,7 @@ async function processQR(decodedText) {
       showScanResultModal(
         attendee, 
         'warning', 
-        `⚠️ ${attendee.nombre} YA INGRESÓ\nÚltimo escaneo: ${attendee.scannedCount} vez${attendee.scannedCount > 1 ? 'es' : ''}`, 
+        `⚠️ ${attendee.nombre} YA INGRESÓ\nÚltimo escaneo: ${attendee.scannedCount} vec${attendee.scannedCount > 1 ? 'es' : ''}`, 
         resumeScanner
       );
       return;
@@ -627,30 +774,34 @@ async function processQR(decodedText) {
     
     // 🔄 Sincronizar con Firebase en background (no bloquea al usuario)
     // Si falla por offline, ya mostramos el resultado y prevenimos doble ingreso localmente
-    navigator.sendBeacon || setTimeout(async () => {
-      try {
-        await updateDoc(doc(firestore, "asistentes", cedula), {
-          scanned: true,
-          scannedCount: count,
-          lastScanned: attendee.lastScanned
+    // 🔄 Sincronizar con Firebase: inmediato si online, encolar si offline
+    const syncUpdates = {
+      scanned: true,
+      scannedCount: count,
+      lastScanned: attendee.lastScanned
+    };
+
+    if (navigator.onLine) {
+      // Online: intentar sync inmediato
+      updateDoc(doc(firestore, "asistentes", cedula), syncUpdates)
+        .then(() => console.log('✅ Sync Firebase inmediata:', cedula))
+        .catch(e => {
+         console.warn('⚠️ Sync inmediata falló, encolando:', cedula, e.message);
+          enqueuePendingSync(cedula, syncUpdates);
         });
-        console.log('✅ Sync Firebase completada para:', cedula);
-      } catch (syncError) {
-        // Si falla la sync (offline), ya está marcado en caché local
-        // Se intentará sincronizar en la próxima carga o cuando vuelva internet
-        console.warn('⚠️ Sync Firebase pendiente (offline):', cedula);
-        // Opcional: guardar en queue para retry automático
-        // queueForSync({ cedula, updates: { scanned: true, scannedCount: count, lastScanned: attendee.lastScanned } });
-      }
-    }, 0);
+    } else {
+      // Offline: encolar para sincronizar después
+      enqueuePendingSync(cedula, syncUpdates);
+      showBubble('📥 Registrado (se sincronizará al conectar)', 'info', 2500);
+    }
     
-  } catch (err) {
-    console.error('❌ Error procesando QR:', err);
-    triggerFeedback('error');
-    showScanResultModal(null, 'error', `❌ Error: ${err.message}`, resumeScanner);
-    await logError('processQR_error', err.message);
-  }
-}
+      } catch (err) {
+        console.error('❌ Error procesando QR:', err);
+        triggerFeedback('error');
+        showScanResultModal(null, 'error', `❌ Error: ${err.message}`, resumeScanner);
+       await logError('processQR_error', err.message);
+      }
+    }
 
     // ===== REANUDAR SCANNER DESPUÉS DE CONFIRMACIÓN =====
     function resumeScanner() {
@@ -912,6 +1063,28 @@ Hola *${person.nombre}*,
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js').catch(console.warn);
       }
+
+    // ===== AUTO-SYNC CUANDO VUELVE INTERNET =====
+    // Escuchar cambios de conexión para sincronizar pendientes automáticamente
+    window.addEventListener('online', async () => {
+      console.log('🌐 Conexión restaurada, verificando pendientes...');
+      const pending = getPendingSyncQueue();
+      if (pending.length > 0) {
+       showBubble('🔄 Conectado: sincronizando...', 'info', 2000);
+       await processPendingSyncQueue();
+      }
+    });
+
+    // Verificar al cargar si hay pendientes y estamos online
+    if (navigator.onLine) {
+      const pending = getPendingSyncQueue();
+      if (pending.length > 0) {
+       console.log(`📋 ${pending.length} pendientes detectados al cargar, sincronizando...`);
+        // Delay pequeño para asegurar que Firebase esté listo
+        setTimeout(() => processPendingSyncQueue(), 2000);
+      }
+    }
+
     }
 
     document.querySelectorAll('.modal').forEach(m => 
@@ -1454,6 +1627,38 @@ if (typeof window !== 'undefined' &&
     <div class="stat-card"><div class="value" id="count-errors">0</div><div class="label">❌ Errores</div></div>
   </div>
   
+    <!-- Indicador de pendientes offline (se muestra solo si hay) -->
+    <div id="pending-indicator" style="max-width:450px;margin:0 auto 10px;padding:8px 15px;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border-radius:12px;text-align:center;font-weight:600;display:none;animation:fadeInUp 0.3s ease-out;">
+      📡 <span id="pending-count">0</span> registro<span id="pending-plural">s</span> por sincronizar
+    </div>
+
+    <script>
+    // Función para actualizar indicador de pendientes
+    function updatePendingIndicator() {
+      const indicator = document.getElementById('pending-indicator');
+      const countEl = document.getElementById('pending-count');
+      const pluralEl = document.getElementById('pending-plural');
+      const pending = getPendingSyncQueue();
+  
+      if (pending.length > 0) {
+        countEl.textContent = pending.length;
+        pluralEl.textContent = pending.length > 1 ? 's' : '';
+        indicator.style.display = 'block';
+      } else {
+        indicator.style.display = 'none';
+      }
+    }
+
+    // Actualizar indicador al cargar y cuando cambie la cola
+    if (typeof getPendingSyncQueue === 'function') {
+      updatePendingIndicator();
+      // Observar cambios en localStorage (para múltiples pestañas)
+     window.addEventListener('storage', (e) => {
+        if (e.key === PENDING_SYNC_KEY) updatePendingIndicator();
+      });
+    }
+    </script>
+
   <!-- Botones con IDs en lugar de onclick -->
   <!-- Botones con IDs + Botón de Sincronización para Evento -->
   <div class="actions">
