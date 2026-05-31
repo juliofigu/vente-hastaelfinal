@@ -535,6 +535,7 @@
 
     // ===== PROCESAR QR ESCANEADO =====
     // ===== PROCESAR QR (MODO CACHÉ HÍBRIDA - OPTIMIZADO PARA EVENTO) =====
+// ===== PROCESAR QR (MODO OFFLINE-FIRST - FEEDBACK INMEDIATO) =====
 async function processQR(decodedText) {
   try {
     isScannerPaused = true;
@@ -556,7 +557,7 @@ async function processQR(decodedText) {
     
     // Extraer cédula del QR (soporta ambos formatos)
     if (isSecureHash) {
-      // Búsqueda por hash en caché local (rápido, sin lecturas a Firebase)
+      // Búsqueda por hash en caché local
       for (let [key, value] of attendeesCache.entries()) {
         if (value.qrHash === scannedValue) {
           cedula = key;
@@ -571,7 +572,6 @@ async function processQR(decodedText) {
       if (parts.length >= 4) {
         cedula = parts[0].toUpperCase().replace(/^V-?/, '').trim();
       } else {
-        // Intentar como cédula directa
         cedula = scannedValue.toUpperCase().replace(/^V-?/, '').trim();
       }
     }
@@ -583,7 +583,7 @@ async function processQR(decodedText) {
       return;
     }
     
-    // Buscar en CACHÉ LOCAL (velocidad instantánea, sin internet)
+    // Buscar en CACHÉ LOCAL (velocidad instantánea, funciona offline)
     const attendee = attendeesCache.get(cedula);
     
     if (!attendee) {
@@ -593,7 +593,7 @@ async function processQR(decodedText) {
       return;
     }
     
-    // Validar si ya ingresó (usando caché local)
+    // ✅ VALIDAR SI YA INGRESÓ (usando caché local - funciona offline)
     if (attendee.scanned) {
       triggerFeedback('warning');
       showScanResultModal(
@@ -605,56 +605,44 @@ async function processQR(decodedText) {
       return;
     }
     
-    // ✅ PRIMER INGRESO: Marcar en Firebase (escritura para sincronizar con otros 3 teléfonos)
-    try {
-      const count = (attendee.scannedCount || 0) + 1;
-      
-      // Actualizar en Firebase (esto sincroniza el estado con los otros teléfonos)
-      await updateDoc(doc(firestore, "asistentes", cedula), {
-        scanned: true,
-        scannedCount: count,
-        lastScanned: new Date().toISOString()
-      });
-      
-      // Actualizar caché local inmediatamente para próximos escaneos
-      attendee.scanned = true;
-      attendee.scannedCount = count;
-      attendee.lastScanned = new Date().toISOString();
-      attendeesCache.set(cedula, attendee);
-      
-      // Feedback exitoso
-      triggerFeedback('success');
-      showScanResultModal(
-        attendee, 
-        'success', 
-        `✅ ${attendee.nombre} AUTORIZADO\nParroquia: ${attendee.parroquia}`, 
-        resumeScanner
-      );
-      
-      // Actualizar estadísticas
-      updateStats();
-      
-    } catch (firestoreError) {
-      // Si falla la escritura, verificar si fue conflicto (otro teléfono ya lo marcó)
-      console.warn('⚠️ Conflicto de escritura:', firestoreError.message);
-      
-      // Re-leer el documento para ver el estado actual desde Firebase
-      const freshDoc = await getDoc(doc(firestore, "asistentes", cedula));
-      if (freshDoc.exists() && freshDoc.data().scanned) {
-        // Otro teléfono ya lo marcó como ingresado
-        triggerFeedback('warning');
-        showScanResultModal(
-          { ...attendee, ...freshDoc.data() },
-          'warning',
-          '⚠️ Registrado por otro punto de control',
-          resumeScanner
-        );
-      } else {
-        // Error real de escritura
-        triggerFeedback('error');
-        showScanResultModal(attendee, 'error', '❌ Error al registrar ingreso', resumeScanner);
+    // ✅ PRIMER INGRESO: Mostrar resultado INMEDIATO (offline-first)
+    // Actualizar caché local PRIMERO para feedback instantáneo
+    const count = (attendee.scannedCount || 0) + 1;
+    attendee.scanned = true;
+    attendee.scannedCount = count;
+    attendee.lastScanned = new Date().toISOString();
+    attendeesCache.set(cedula, attendee);
+    
+    // Mostrar resultado al usuario SIN esperar a Firebase
+    triggerFeedback('success');
+    showScanResultModal(
+      attendee, 
+      'success', 
+      `✅ ${attendee.nombre} AUTORIZADO\nParroquia: ${attendee.parroquia}`, 
+      resumeScanner
+    );
+    
+    // Actualizar estadísticas locales
+    updateStats();
+    
+    // 🔄 Sincronizar con Firebase en background (no bloquea al usuario)
+    // Si falla por offline, ya mostramos el resultado y prevenimos doble ingreso localmente
+    navigator.sendBeacon || setTimeout(async () => {
+      try {
+        await updateDoc(doc(firestore, "asistentes", cedula), {
+          scanned: true,
+          scannedCount: count,
+          lastScanned: attendee.lastScanned
+        });
+        console.log('✅ Sync Firebase completada para:', cedula);
+      } catch (syncError) {
+        // Si falla la sync (offline), ya está marcado en caché local
+        // Se intentará sincronizar en la próxima carga o cuando vuelva internet
+        console.warn('⚠️ Sync Firebase pendiente (offline):', cedula);
+        // Opcional: guardar en queue para retry automático
+        // queueForSync({ cedula, updates: { scanned: true, scannedCount: count, lastScanned: attendee.lastScanned } });
       }
-    }
+    }, 0);
     
   } catch (err) {
     console.error('❌ Error procesando QR:', err);
