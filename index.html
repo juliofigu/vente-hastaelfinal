@@ -1636,35 +1636,54 @@ if (typeof window !== 'undefined' &&
   </div>
   
     <!-- Indicador de pendientes offline (se muestra solo si hay) -->
+    <!-- Indicador de pendientes offline (se muestra solo si hay) -->
     <div id="pending-indicator" style="max-width:450px;margin:0 auto 10px;padding:8px 15px;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border-radius:12px;text-align:center;font-weight:600;display:none;animation:fadeInUp 0.3s ease-out;">
-      📡 <span id="pending-count">0</span> registro<span id="pending-plural">s</span> por sincronizar
+     📡 <span id="pending-count">0</span> registro<span id="pending-plural">s</span> por sincronizar
     </div>
 
     <script>
-    // Función para actualizar indicador de pendientes
+    // Función para actualizar indicador de pendientes (se ejecuta cuando el módulo esté listo)
     function updatePendingIndicator() {
-      const indicator = document.getElementById('pending-indicator');
-      const countEl = document.getElementById('pending-count');
-      const pluralEl = document.getElementById('pending-plural');
-      const pending = getPendingSyncQueue();
+     try {
+       // Verificar si la función existe (del módulo)
+        if (typeof window.getPendingSyncQueue === 'function') {
+          const indicator = document.getElementById('pending-indicator');
+         const countEl = document.getElementById('pending-count');
+          const pluralEl = document.getElementById('pending-plural');
+          const pending = window.getPendingSyncQueue();
   
-      if (pending.length > 0) {
-        countEl.textContent = pending.length;
-        pluralEl.textContent = pending.length > 1 ? 's' : '';
-        indicator.style.display = 'block';
-      } else {
-        indicator.style.display = 'none';
+          if (pending && pending.length > 0) {
+           countEl.textContent = pending.length;
+           pluralEl.textContent = pending.length > 1 ? 's' : '';
+            indicator.style.display = 'block';
+          } else {
+           indicator.style.display = 'none';
+          }
+        }
+      } catch (e) {
+       // Silenciar error si aún no está disponible
+        console.log('⏳ Indicador pendiente de inicialización...');
       }
     }
 
-    // Actualizar indicador al cargar y cuando cambie la cola
-    if (typeof getPendingSyncQueue === 'function') {
-      updatePendingIndicator();
-      // Observar cambios en localStorage (para múltiples pestañas)
-     window.addEventListener('storage', (e) => {
-        if (e.key === PENDING_SYNC_KEY) updatePendingIndicator();
+    // Ejecutar cuando el DOM esté listo y el módulo se haya cargado
+    if (document.readyState === 'loading') {
+     document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(updatePendingIndicator, 1000); // Esperar 1s para que el módulo cargue
       });
+    } else {
+  setTimeout(updatePendingIndicator, 1000);
     }
+
+    // Actualizar periódicamente cada 5 segundos
+    setInterval(updatePendingIndicator, 5000);
+
+    // Escuchar cambios en localStorage
+    window.addEventListener('storage', (e) => {
+     if (e.key === 'vente_pending_sync_v1') {
+       updatePendingIndicator();
+      }
+    });
     </script>
 
   <!-- Botones con IDs en lugar de onclick -->
