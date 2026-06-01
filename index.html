@@ -666,24 +666,27 @@
         isCacheLoaded = true;
         lastSyncTime = Date.now();
     
-        // 🔍 Contar solo asistentes reales (excluir usuarios de prueba)
-        const totalCount = attendeesCache.size;
-        const realAttendeesCount = Array.from(attendeesCache.values()).filter(a => {
-          const parroquia = (a.parroquia || '').toLowerCase();
-          return !parroquia.includes('usuario de pruebas') && !parroquia.includes('pruebas');
-        }).length;
+        // 🔍 Contar asistentes reales (excluir usuarios de prueba) para el mensaje
+      const count = attendeesCache.size; // ← MANTENER para compatibilidad con console.log y otros usos
+      const realCount = Array.from(attendeesCache.values()).filter(a => {
+        const parroquia = (a.parroquia || '').toLowerCase();
+        return !parroquia.includes('usuario de pruebas') && !parroquia.includes('pruebas');
+      }).length;
 
-        const pendingCount = getPendingSyncQueue().length;
+      const pendingCount = getPendingSyncQueue().length;
 
-        let message = `✅ ¡Listo! ${realAttendeesCount} asistentes`;
-        if (totalCount !== realAttendeesCount) {
-          message += ` (${totalCount} total)`;
-        }
-        if (pendingCount > 0) {
-          message += ` • ${pendingCount} pendiente${pendingCount > 1 ? 's' : ''} por sincronizar`;
-        }
-        showBubble(message, 'success', 4000);
-        console.log('✅ Caché actualizada con merge:', { total: count, pending: pendingCount });
+      // Mensaje para el usuario: mostrar solo reales, con total entre paréntesis si difiere
+      let message = `✅ ¡Listo! ${realCount} asistentes`;
+      if (count !== realCount) {
+        message += ` (${count} total)`;
+      }
+      if (pendingCount > 0) {
+        message += ` • ${pendingCount} pendiente${pendingCount > 1 ? 's' : ''} por sincronizar`;
+      }
+      showBubble(message, 'success', 4000);
+
+      // Log interno: mantener 'count' original para debugging
+      console.log('✅ Caché actualizada con merge:', { total: count, reales: realCount, pending: pendingCount });
     
         // 5. Intentar procesar cola de pendientes ahora que hay conexión
         if (navigator.onLine && pendingCount > 0) {
