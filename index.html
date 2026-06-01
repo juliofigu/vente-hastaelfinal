@@ -296,10 +296,20 @@
       try {
         const c = await DB.getCounts();
         const el = (id) => document.getElementById(id);
-        if (el('count-scanned')) el('count-scanned').textContent = c.scanned;
+        
+        // 📋 Registrados (sin pruebas)
         if (el('count-total')) el('count-total').textContent = c.total;
+        
+        // ✅ Ingresaron (CON pruebas para monitoreo)
+        // Obtener TODOS los escaneados (incluye pruebas)
+        const allAttendees = await DB.getAll();
+        const allScanned = allAttendees.filter(a => a.scanned).length;
+        if (el('count-scanned')) el('count-scanned').textContent = allScanned;
+        
+        // ⚠️ Duplicados (sin pruebas)
         if (el('count-duplicates')) el('count-duplicates').textContent = c.duplicates;
-        // ✅ AGREGAR ESTAS LÍNEAS:
+        
+        // 🔄 Por Llegar (calculado sin pruebas)
         const remaining = c.total - c.scanned;
         if (el('count-remaining')) {
           el('count-remaining').textContent = remaining >= 0 ? remaining : 0;
@@ -307,9 +317,9 @@
           if (remaining <= 0) el('count-remaining').style.color = '#22c55e'; // Verde si completó
         }
 
-    if (el('last-sync')) el('last-sync').textContent = `Última actualización: ${new Date().toLocaleTimeString('es-VE')}`;
-  } catch(e) { console.error(e); }
-}
+        if (el('last-sync')) el('last-sync').textContent = `Última actualización: ${new Date().toLocaleTimeString('es-VE')}`;
+      } catch(e) { console.error(e); }
+    }
     window.updateStats = updateStats;
     
     // openModal simplificado - sin verificación interna (se maneja en setupAutoDisableScanner)
@@ -331,15 +341,54 @@
     };
 
     // ===== VIBRACIÓN Y AUDIO FEEDBACK =====
+    // ===== VIBRACIÓN Y AUDIO FEEDBACK (COMPATIBILIDAD UNIVERSAL) =====
     function triggerFeedback(type) {
-      if ('vibrate' in navigator) {
-        if (type === 'success') {
-          navigator.vibrate([200, 100, 200]);
-        } else if (type === 'warning') {
-          navigator.vibrate([400]);
-        } else if (type === 'error') {
-          navigator.vibrate([500, 200, 500]);
+      // Intentar vibración con fallback visual
+      const vibrateWithFallback = (pattern) => {
+        if ('vibrate' in navigator) {
+          try {
+            // Solicitar permiso en iOS si es necesario
+            if (navigator.permissions && navigator.permissions.query) {
+              navigator.permissions.query({ name: 'vibrate' }).catch(() => {
+                // Ignorar error si no hay permiso
+              });
+            }
+            
+            navigator.vibrate(pattern);
+            
+            // Verificar si la vibración funcionó (algunos dispositivos no la ejecutan)
+            setTimeout(() => {
+              // Si no hay feedback táctil, al menos mostrar burbuja
+              if (type === 'success') {
+                showBubble('✅ Escaneo exitoso', 'success', 1000);
+              }
+            }, 100);
+          } catch (e) {
+            console.warn('⚠️ Vibración no disponible:', e);
+            // Fallback: burbuja visual
+            if (type === 'success') showBubble('✅ OK', 'success', 1000);
+            else if (type === 'warning') showBubble('⚠️ Ya ingresó', 'warning', 1500);
+            else if (type === 'error') showBubble('❌ Error', 'error', 2000);
+          }
+        } else {
+          // Dispositivo no soporta vibración → Usar burbuja
+          if (type === 'success') showBubble('✅ OK', 'success', 1000);
+          else if (type === 'warning') showBubble('⚠️ Ya ingresó', 'warning', 1500);
+          else if (type === 'error') showBubble('❌ Error', 'error', 2000);
         }
+      };
+
+      // Patrones de vibración optimizados
+      switch(type) {
+        case 'success':
+          vibrateWithFallback([150, 50, 150]); // Doble vibración corta
+          break;
+        case 'warning':
+          vibrateWithFallback([300]); // Vibración media
+          break;
+        case 'error':
+          vibrateWithFallback([400, 100, 400]); // Doble vibración larga
+          break;
       }
     }
 
