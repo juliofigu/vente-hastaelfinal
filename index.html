@@ -666,13 +666,22 @@
         isCacheLoaded = true;
         lastSyncTime = Date.now();
     
-        const count = attendeesCache.size;
+        // 🔍 Contar solo asistentes reales (excluir usuarios de prueba)
+        const totalCount = attendeesCache.size;
+        const realAttendeesCount = Array.from(attendeesCache.values()).filter(a => {
+          const parroquia = (a.parroquia || '').toLowerCase();
+          return !parroquia.includes('usuario de pruebas') && !parroquia.includes('pruebas');
+        }).length;
+
         const pendingCount = getPendingSyncQueue().length;
-    
-       let message = `✅ ¡Listo! ${count} asistentes`;
+
+        let message = `✅ ¡Listo! ${realAttendeesCount} asistentes`;
+        if (totalCount !== realAttendeesCount) {
+          message += ` (${totalCount} total)`;
+        }
         if (pendingCount > 0) {
-         message += ` • ${pendingCount} pendiente${pendingCount > 1 ? 's' : ''} por sincronizar`;
-       }
+          message += ` • ${pendingCount} pendiente${pendingCount > 1 ? 's' : ''} por sincronizar`;
+        }
         showBubble(message, 'success', 4000);
         console.log('✅ Caché actualizada con merge:', { total: count, pending: pendingCount });
     
