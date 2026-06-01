@@ -255,14 +255,22 @@
         return attendees;
       },
       async getCounts() {
-        const all = await this.getAll();
-        return {
-          total: all.length,
-          scanned: all.filter(a => a.scanned).length,
-          duplicates: all.filter(a => (a.scannedCount||0) > 1).length,
-          errors: all.filter(a => a.error).length
-        };
-      },
+      const all = await this.getAll();
+      
+      // 🔍 FILTRO: Excluir usuarios de prueba de las estadísticas
+      // Se excluyen si la parroquia contiene "usuario de pruebas" o "pruebas" (insensible a mayúsculas)
+      const realAttendees = all.filter(a => {
+        const parroquia = (a.parroquia || '').toLowerCase();
+        return !parroquia.includes('usuario de pruebas') && !parroquia.includes('pruebas');
+      });
+      
+      return {
+        total: realAttendees.length,
+        scanned: realAttendees.filter(a => a.scanned).length,
+        duplicates: realAttendees.filter(a => (a.scannedCount||0) > 1).length,
+        errors: realAttendees.filter(a => a.error).length
+      };
+    },
       generateQRContent(person) {
         if (person.qrHash && /^[a-f0-9]{64}$/.test(person.qrHash)) {
           return person.qrHash;
@@ -833,7 +841,14 @@ async function processQR(decodedText) {
           container.innerHTML = '<p style="text-align:center;padding:20px;color:#64748b">Sin registros</p>';
           return;
         }
-        container.innerHTML = attendees.map(p => `
+
+              // 🔍 Filtrar: ocultar usuarios de prueba en la lista visual
+      const filteredAttendees = attendees.filter(a => {
+        const parroquia = (a.parroquia || '').toLowerCase();
+        return !parroquia.includes('usuario de pruebas') && !parroquia.includes('pruebas');
+      });
+
+        container.innerHTML = filteredAttendees.map(p => `
           <div class="attendee-card ${p.scanned ? 'scanned' : ''}">
             <div style="font-weight:700;font-size:1.1rem;color:#0f172a;margin-bottom:6px">${p.nombre}</div>
             <div style="font-size:0.85rem;color:#64748b;margin:4px 0">🆔 ${p.cedula} • 📍 ${p.parroquia}</div>
