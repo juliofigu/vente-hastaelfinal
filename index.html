@@ -658,102 +658,166 @@
 
 // ===== SINCRONIZAR CACHÉ (FUNCIÓN CLAVE PARA 4 TELÉFONOS) =====
     // ===== SINCRONIZAR CACHÉ CON MERGE INTELIGENTE (offline→online) =====
+    // ===== SINCRONIZAR CACHÉ CON SYNC BIDIRECCIONAL (PREVIENE PÉRDIDA DE DATOS) =====
     window.sincronizarCache = async function() {
-      showBubble('🔄 Sincronizando lista de asistentes...', 'info');
-  
+      showBubble('🔄 Sincronizando...', 'info');
+      
       try {
-        // 1. Guardar cambios locales NO sincronizados ANTES de limpiar caché
-        const localChanges = new Map();
-        if (isCacheLoaded) {
-          for (let [cedula, data] of attendeesCache.entries()) {
-            // Si está marcado como escaneado localmente pero no en Firebase (por offline)
-            if (data.scanned && data.lastScanned) {
-              // Verificar si ya está en cola de pendientes
-              const pending = getPendingSyncQueue().find(p => p.cedula === cedula);
-              if (!pending) {
-                // No está en cola → agregar para asegurar sincronización
-                enqueuePendingSync(cedula, {
-                  scanned: data.scanned,
-                 scannedCount: data.scannedCount,
-                 lastScanned: data.lastScanned
-                });
+        // PASO 1: Subir TODOS los cambios locales PRIMERO (antes de descargar)
+        const pendingQueue = getPendingSyncQueue();
+        let uploadSuccess = 0;
+        let uploadFailed = 0;
+        const failedQueue = [];
+        
+        if (pendingQueue.length > 0) {
+          console.log(`📤 Subiendo ${pendingQueue.length} cambios locales...`);
+          
+          for (const item of pendingQueue) {
+            try {
+              // Verificar si existe en Firebase
+              const docRef = doc(firestore, "asistentes", item.cedula);
+              const docSnap = await getDoc(docRef);
+              
+              if (docSnap.exists()) {
+                // Existe: comparar timestamps y mantener el más reciente
+                const firebaseData = docSnap.data();
+                const localTimestamp = item.updates.lastScanned ? new Date(item.updates.lastScanned).getTime() : 0;
+                const firebaseTimestamp = firebaseData.lastScanned ? new Date(firebaseData.lastScanned).getTime() : 0;
+                
+                // Si el dato local es más reciente (o Firebase no tiene scanned), subir local
+                if (localTimestamp > firebaseTimestamp || !firebaseData.scanned) {
+                  await updateDoc(docRef, item.updates);
+                  console.log(`✅ Subido: ${item.cedula} (local > firebase)`);
+                  
+                  // Actualizar caché local
+                  if (attendeesCache.has(item.cedula)) {
+                    const current = attendeesCache.get(item.cedula);
+                    attendeesCache.set(item.cedula, { ...current, ...item.updates });
+                  }
+                  uploadSuccess++;
+                } else {
+                  // Firebase es más reciente, mantener Firebase pero actualizar caché
+                  console.log(`⏭️ Saltado (firebase más reciente): ${item.cedula}`);
+                  if (attendeesCache.has(item.cedula)) {
+                    const current = attendeesCache.get(item.cedula);
+                    attendeesCache.set(item.cedula, { ...current, ...firebaseData });
+                  }
+                  uploadSuccess++; // Contar como éxito porque ya está actualizado
+                }
+              } else {
+                // No existe en Firebase → crear
+                await setDoc(docRef, { ...item.updates, cedula: item.cedula });
+                console.log(`✅ Creado: ${item.cedula}`);
+                uploadSuccess++;
               }
+            } catch (e) {
+              console.warn(`❌ Falló subida: ${item.cedula}`, e.message);
+              uploadFailed++;
+              failedQueue.push(item); // Mantener en cola para reintentar
             }
           }
+          
+          // Guardar solo los que fallaron
+          savePendingSyncQueue(failedQueue);
+          
+          if (uploadSuccess > 0) {
+            showBubble(`✅ ${uploadSuccess} cambios subidos`, 'success', 2000);
+          }
+          if (uploadFailed > 0) {
+            showBubble(`⚠️ ${uploadFailed} pendientes`, 'warning', 3000);
+          }
         }
-    
-        // 2. Descargar datos frescos desde Firebase
+        
+        // PASO 2: Descargar datos frescos de Firebase (DESPUÉS de subir)
+        console.log('📥 Descargando datos de Firebase...');
         const snapshot = await getDocs(collection(firestore, "asistentes"));
-    
-        // 3. Merge inteligente: combinar Firebase + cambios locales pendientes
+        
+        // PASO 3: Merge inteligente - PRESERVAR cambios locales no subidos
         const newCache = new Map();
-        const pendingQueue = getPendingSyncQueue();
-    
+        const remainingPending = getPendingSyncQueue();
+        
         snapshot.forEach(doc => {
           const cedula = doc.id;
-         const firebaseData = doc.data();
-      
-          // Buscar si hay cambios locales pendientes para esta cédula
-          const pending = pendingQueue.find(p => p.cedula === cedula);
-      
+          const firebaseData = doc.data();
+          
+          // Buscar si hay cambios locales PENDIENTES para esta cédula
+          const pending = remainingPending.find(p => p.cedula === cedula);
+          
           if (pending) {
-            // Merge: Firebase como base + cambios locales como prioridad
+            // Hay cambios locales pendientes → PRIORIZAR LOCAL sobre Firebase
             newCache.set(cedula, {
-             cedula,
+              cedula,
               ...firebaseData,
               ...pending.updates,  // Los cambios locales sobrescriben
-             _synced: false  // Marcador interno: aún no confirmado por Firebase
+              _localPriority: true  // Marcador: datos locales tienen prioridad
             });
+            console.log(`🔒 Preservado local: ${cedula}`);
           } else {
-            // Sin cambios locales → usar datos de Firebase tal cual
+            // Sin cambios locales → usar Firebase
             newCache.set(cedula, { cedula, ...firebaseData });
           }
         });
-    
-        // 4. Reemplazar caché con el resultado del merge
+        
+        // PASO 4: Reemplazar caché
         attendeesCache = newCache;
         isCacheLoaded = true;
         lastSyncTime = Date.now();
-    
-        // 🔍 Contar asistentes reales (excluir usuarios de prueba) para el mensaje
-      const count = attendeesCache.size; // ← MANTENER para compatibilidad con console.log y otros usos
-      const realCount = Array.from(attendeesCache.values()).filter(a => {
-        const parroquia = (a.parroquia || '').toLowerCase();
-        return !parroquia.includes('usuario de pruebas') && !parroquia.includes('pruebas');
-      }).length;
-
-      const pendingCount = getPendingSyncQueue().length;
-
-      // Mensaje para el usuario: mostrar solo reales, con total entre paréntesis si difiere
-      let message = `✅ ¡Listo! ${realCount} asistentes`;
-      if (count !== realCount) {
-        message += ` (${count} total)`;
-      }
-      if (pendingCount > 0) {
-        message += ` • ${pendingCount} pendiente${pendingCount > 1 ? 's' : ''} por sincronizar`;
-      }
-      showBubble(message, 'success', 4000);
-
-      // Log interno: mantener 'count' original para debugging
-      console.log('✅ Caché actualizada con merge:', { total: count, reales: realCount, pending: pendingCount });
-    
-        // 5. Intentar procesar cola de pendientes ahora que hay conexión
-        if (navigator.onLine && pendingCount > 0) {
-          console.log('🔄 Intentando sincronizar pendientes...');
-          processPendingSyncQueue().then(result => {
-           if (result.success > 0) {
-              console.log(`✅ ${result.success} pendientes sincronizados`);
-            }
-          });
+        
+        // PASO 5: Actualizar UI
+        const count = attendeesCache.size;
+        const realCount = Array.from(attendeesCache.values()).filter(a => {
+          const parroquia = (a.parroquia || '').toLowerCase();
+          return !parroquia.includes('usuario de pruebas') && !parroquia.includes('pruebas');
+        }).length;
+        
+        const finalPendingCount = getPendingSyncQueue().length;
+        
+        let message = `✅ ¡Listo! ${realCount} asistentes`;
+        if (count !== realCount) {
+          message += ` (${count} total)`;
         }
-    
-        // 6. Actualizar estadísticas en pantalla
+        if (finalPendingCount > 0) {
+          message += ` • ${finalPendingCount} pendiente${finalPendingCount > 1 ? 's' : ''}`;
+        }
+        
+        showBubble(message, 'success', 4000);
+        console.log('✅ Sync completada:', { 
+          total: count, 
+          reales: realCount, 
+          pendientes: finalPendingCount,
+          subidos: uploadSuccess,
+          fallidos: uploadFailed
+        });
+        
         updateStats();
-    
+        updatePendingIndicator();
+        
       } catch (e) {
-        console.error('❌ Error cargando caché:', e);
-        showBubble('❌ Error al sincronizar lista', 'error', 5000);
+        console.error('❌ Error en sincronización:', e);
+        showBubble('❌ Error al sincronizar', 'error', 5000);
       }
+    };
+
+    // ===== MANEJO SEGURO DE SINCRONIZACIÓN MANUAL =====
+    window.handleManualSync = async function() {
+      const pending = getPendingSyncQueue();
+      
+      if (pending.length > 0) {
+        // Hay datos pendientes → advertir al usuario
+        const confirmed = confirm(
+          `📡 Tienes ${pending.length} registro${pending.length > 1 ? 's' : ''} pendiente${pending.length > 1 ? 's' : ''} de sincronizar.\n\n` +
+          `✅ La app subirá estos datos PRIMERO antes de descargar.\n\n` +
+          `¿Deseas continuar?`
+        );
+        
+        if (!confirmed) {
+          showBubble('⏭️ Sincronización cancelada', 'info', 2000);
+          return;
+        }
+      }
+      
+      // Ejecutar sincronización segura
+      await window.sincronizarCache();
     };
 
     // ===== PROCESAR QR ESCANEADO =====
@@ -1149,12 +1213,17 @@ Hola *${person.nombre}*,
 
     // ===== AUTO-SYNC CUANDO VUELVE INTERNET =====
     // Escuchar cambios de conexión para sincronizar pendientes automáticamente
+    // ===== AUTO-SYNC INTELIGENTE CUANDO VUELVE INTERNET =====
     window.addEventListener('online', async () => {
-      console.log('🌐 Conexión restaurada, verificando pendientes...');
+      console.log('🌐 Conexión restaurada, sincronizando automáticamente...');
       const pending = getPendingSyncQueue();
+      
       if (pending.length > 0) {
-       showBubble('🔄 Conectado: sincronizando...', 'info', 2000);
-       await processPendingSyncQueue();
+        showBubble('🔄 Conectado: subiendo datos...', 'info', 2000);
+        // Esperar 2 segundos para asegurar conexión estable
+        setTimeout(() => {
+          window.sincronizarCache(); // Usar la nueva función segura
+        }, 2000);
       }
     });
 
@@ -1769,11 +1838,11 @@ if (typeof window !== 'undefined' &&
     <button class="btn btn-outline" id="btn-agregar">➕ Agregar</button>
     <button class="btn btn-primary" id="btn-exportar">📊 Exportar</button>
     <!-- Botón de sincronización: cargar lista para escaneo rápido (clave para 4 teléfonos) -->
-    <button class="btn btn-primary" onclick="sincronizarCache()" 
-            style="background:linear-gradient(135deg,#059669 0%,#047857 100%)" 
-            title="Cargar lista de asistentes para escaneo rápido">
-     🔄 Sincronizar
-    </button>
+    <button class="btn btn-primary" onclick="handleManualSync()" 
+        style="background:linear-gradient(135deg,#059669 0%,#047857 100%)" 
+        title="Sincronizar datos con Firebase (sube cambios locales primero)">
+  🔄 Sincronizar
+</button>
   </div>
   
   <div id="modal-list" class="modal">
