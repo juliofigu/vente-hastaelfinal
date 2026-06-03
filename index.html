@@ -56,6 +56,24 @@
     
     // ===== ESTADO DE SESIÓN DE ADMINISTRADOR =====
     let isAdminSessionActive = false; // Persiste mientras la página esté abierta
+
+    // ===== LÍMITE TEMPORAL DE REGISTRO (BLOQUEO POR AFORO) =====
+    // Fecha y hora exacta: 04 de Junio 2026, 9:00 AM (hora Venezuela = UTC-4)
+    const REGISTRATION_DEADLINE = new Date('2026-06-04T13:00:00Z'); // 9:00 AM VET = 13:00 UTC
+    const EMERGENCY_MASTER_KEY = 'a@lavenezolana2026'; // Clave secreta para casos de emergencia
+
+    // Función que verifica si aún se pueden agregar asistentes
+    function isRegistrationOpen() {
+      return new Date() < REGISTRATION_DEADLINE;
+    }
+
+    // Mensaje de aforo lleno
+    const AFORO_LLENO_MSG = 
+      '⛔ AFORO LLENO\n\n' +
+      'El evento ha alcanzado el límite de capacidad del local.\n' +
+      'No se aceptan más registros en este momento.\n\n' +
+      '📞 Consulte con el Creador: Lcdo. Julio Figueroa si requiere una excepción.';
+
     // ===== SISTEMA DE CACHÉ HÍBRIDA (PARA 4 TELÉFONOS - OPTIMIZACIÓN) =====
     let attendeesCache = new Map(); // Caché local: cedula -> datos completos
     let isCacheLoaded = false;       // Indica si ya se sincronizó la lista
@@ -585,33 +603,81 @@
         },
         { 
           id: 'btn-agregar', 
-          action: () => {
-            // 🔐 Verificar contraseña SOLO si no hay sesión activa
-            if (!isAdminSessionActive && !verificarAccesoAdmin()) return false;
-            
-            // ✅ Activar sesión de administrador (persiste hasta refresh)
-            isAdminSessionActive = true;
-            
-            // 🔕 Desactivar scanner si está activo
-            if (isScannerActive) {
-              if (html5QrCode) html5QrCode.stop().catch(() => {});
-              isScannerActive = false;
-              isScannerPaused = false;
-              const btnContainer = document.querySelector('.scanner-toggle-container');
-              const toggleBtn = document.getElementById('btn-toggle-scanner');
-              if (btnContainer) btnContainer.style.display = 'block';
-              if (toggleBtn) {
-                toggleBtn.innerHTML = '📷 ACTIVAR SCANNER';
-                toggleBtn.classList.remove('btn-outline');
-                toggleBtn.classList.add('btn-success');
+            action: () => {
+              // 🔒 VERIFICAR SI PASÓ LA HORA LÍMITE DE REGISTRO
+              if (!isRegistrationOpen()) {
+                // Mostrar mensaje de aforo lleno
+                const esEmergencia = confirm(
+                  `⛔ AFORO LLENO\n\n` +
+                  `El evento ha alcanzado el límite de capacidad del local.\n` +
+                  `No se aceptan más registros.\n\n` +
+                  `¿Es un caso de EMERGENCIA que requiere excepción?\n\n` +
+                  `(Requiere autorización del Lcdo. Julio Figueroa)`
+                );
+                
+                if (!esEmergencia) {
+                  // Usuario cancela → solo mostrar info y salir
+                  showBubble('⛔ Registro cerrado - Aforo lleno', 'error', 3000);
+                  return false;
+                }
+                
+                // Caso de emergencia: solicitar CLAVE MAESTRA
+                const masterKey = prompt(
+                  ' CLAVE DE EMERGENCIA\n\n' +
+                  'Ingrese la clave de autorización Lcdo. Julio Figueroa:'
+                );
+                
+                if (masterKey !== EMERGENCY_MASTER_KEY) {
+                  // Clave incorrecta o cancelada
+                  if (masterKey !== null) {
+                    showBubble('❌ Clave de emergencia incorrecta', 'error', 3000);
+                  }
+                  return false;
+                }
+                
+                // Clave correcta → confirmar acción
+                const confirmar = confirm(
+                  '⚠️ REGISTRO DE EMERGENCIA\n\n' +
+                  'Está a punto de agregar un asistente FUERA del aforo.\n' +
+                  'Esta acción quedará registrada.\n\n' +
+                  '¿Confirmar registro de emergencia?'
+                );
+                
+                if (!confirmar) return false;
+                
+                // Registrar el ingreso de emergencia en consola (auditoría)
+                console.warn(' REGISTRO DE EMERGENCIA AUTORIZADO:', new Date().toISOString());
+                showBubble('🚨 Acceso de emergencia activado', 'warning', 3000);
+                // Continúa hacia abajo para abrir el modal...
+                
+              } else {
+                // ✅ Aún dentro del horario: verificar contraseña admin normal
+                if (!isAdminSessionActive && !verificarAccesoAdmin()) return false;
               }
+              
+              // ✅ Activar sesión de administrador
+              isAdminSessionActive = true;
+              
+              // 🔕 Desactivar scanner si está activo
+              if (isScannerActive) {
+                if (html5QrCode) html5QrCode.stop().catch(() => {});
+                isScannerActive = false;
+                isScannerPaused = false;
+                const btnContainer = document.querySelector('.scanner-toggle-container');
+                const toggleBtn = document.getElementById('btn-toggle-scanner');
+                if (btnContainer) btnContainer.style.display = 'block';
+                if (toggleBtn) {
+                  toggleBtn.innerHTML = '📷 ACTIVAR SCANNER';
+                  toggleBtn.classList.remove('btn-outline');
+                  toggleBtn.classList.add('btn-success');
+                }
+              }
+              
+              // ✅ Abrir modal de agregar
+              openModal('modal-add');
+              return true;
             }
-            
-            // ✅ Abrir modal de agregar
-            openModal('modal-add');
-            return true;
-          }
-        },
+          },
         { 
           id: 'btn-exportar', 
           action: () => {
@@ -1201,6 +1267,30 @@ Hola *${person.nombre}*,
       updateStats(); 
       setupFormAdd();
       setupAutoDisableScanner(); // ✅ Configurar protección de botones
+
+      // ===== INDICADOR VISUAL: Cambiar apariencia del botón "Agregar" cuando esté cerrado =====
+      function actualizarEstadoBotonAgregar() {
+        const btnAgregar = document.getElementById('btn-agregar');
+        if (!btnAgregar) return;
+        
+        if (!isRegistrationOpen()) {
+          // Fuera de horario → estilo de "bloqueado"
+          btnAgregar.innerHTML = '🚫 Agregar (Cerrado)';
+          btnAgregar.style.opacity = '0.6';
+          btnAgregar.style.background = 'linear-gradient(135deg, #94a3b8 0%, #64748b 100%)';
+          btnAgregar.title = 'Registro cerrado - Aforo lleno. Click para solicitar excepción.';
+        } else {
+          // Dentro del horario → estilo normal
+          btnAgregar.innerHTML = '➕ Agregar';
+          btnAgregar.style.opacity = '1';
+          btnAgregar.style.background = ''; // Reset al CSS original
+          btnAgregar.title = 'Agregar nuevo asistente';
+        }
+      }
+
+      // Ejecutar al cargar y cada 30 segundos (por si cambia la hora durante uso)
+      actualizarEstadoBotonAgregar();
+      setInterval(actualizarEstadoBotonAgregar, 30000);
 
       // Auto-sincronizar caché al cargar si hay conexión (background, no bloquea)
       if (navigator.onLine && !isCacheLoaded) {
